@@ -1,3 +1,15 @@
+# Dataset Creation
+
+Use the scripts `tasks/deepcoder/dataset/run_data_generation.sh` and
+`tasks/robust_fill/dataset/run_data_generation.sh` to generate train and test
+datasets for the DeepCoder and RobustFill DSLs, according to the different
+compositional generalization splits. By default these scripts generate small
+datasets locally just for testing purposes, but you can edit the scripts to
+generate larger datasets using a cloud computing platform.
+
+# TODO
+everything below here is TODO
+
 # exedec
 
 TODO(b/329303239): Add a description for your new project, explain what is

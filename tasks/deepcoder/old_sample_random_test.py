@@ -20,8 +20,8 @@ from absl.testing import absltest
 from absl.testing import flagsaver
 from absl.testing import parameterized
 
+from exedec.tasks import experiment as exp_module
 from exedec.tasks.deepcoder import deepcoder_dsl
-from exedec.tasks.deepcoder import experiment as exp_module
 from exedec.tasks.deepcoder import old_sample_random
 
 FLAGS = flags.FLAGS

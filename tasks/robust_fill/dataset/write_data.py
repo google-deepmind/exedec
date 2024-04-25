@@ -24,10 +24,10 @@ from absl import app
 from absl import flags
 import tensorflow as tf
 
+from exedec.tasks import experiment as exp_module
 from exedec.tasks.robust_fill import dsl
 from exedec.tasks.robust_fill import sample_random
 from exedec.tasks.robust_fill import tokens as dsl_tokens
-from exedec.tasks.robust_fill.dataset import experiment as exp_module
 
 gfile = tf.io.gfile
 
@@ -178,17 +178,10 @@ def generate_task_for_experiment(experiment: str, is_train: bool):
     max_expressions = 10
     sampler_pool = sample_random.SAMPLER_POOL_ALL
 
-  elif experiment == exp_module.Experiment.LENGTH_1_6_TO_7_10.name:
+  elif experiment == exp_module.Experiment.LENGTH_GENERALIZATION.name:
     min_expressions = 1 if is_train else 7
     max_expressions = 6 if is_train else 10
     sampler_pool = sample_random.SAMPLER_POOL_ALL
-
-  elif experiment == exp_module.Experiment.LENGTH_6_TO_1_10.name:
-    min_expressions = 6 if is_train else 1
-    max_expressions = 6 if is_train else 10
-    sampler_pool = sample_random.SAMPLER_POOL_ALL
-    if not is_train:
-      valid_num_expressions_fn = lambda n: n != 6
 
   elif experiment == exp_module.Experiment.COMPOSE_DIFFERENT_CONCEPTS.name:
     min_expressions = 2
@@ -220,7 +213,7 @@ def generate_task_for_experiment(experiment: str, is_train: bool):
       sampler_pool = sample_random.SAMPLER_POOL_ALL
       keep_fn = lambda c: any(isinstance(e, dsl.Compose) for e in c.expressions)
 
-  elif experiment == exp_module.Experiment.EXTEND_OP_FUNCTIONALITY.name:
+  elif experiment == exp_module.Experiment.ADD_OP_FUNCTIONALITY.name:
     min_expressions = 1
     max_expressions = 6
     sampler_pool = (sample_random.SAMPLER_POOL_NO_COMPOSE_SUBSTRING if is_train

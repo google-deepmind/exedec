@@ -21,8 +21,8 @@ import random
 
 from absl import logging
 
+from exedec.tasks import experiment as exp_module
 from exedec.tasks.deepcoder import deepcoder_dsl as dsl
-from exedec.tasks.deepcoder import experiment as exp_module
 from exedec.tasks.deepcoder import old_sample_random
 
 
@@ -85,7 +85,7 @@ def _get_next_statements(program_state,
     product_args = []
     for t in op.inputs_type:
       if isinstance(t, tuple):  # Argument is a lambda.
-        if (experiment == exp_module.Experiment.EXTEND_OP_FUNCTIONALITY and
+        if (experiment == exp_module.Experiment.ADD_OP_FUNCTIONALITY and
             is_train and op.token == 'Scanl1'):
           valid_lambdas = dsl.LAMBDAS_ONLY_MINUS_MIN
         else:
@@ -254,7 +254,7 @@ def _get_programs_of_length(
       lambdas = dsl.LAMBDAS
       keep_fn = lambda program: (  # pylint: disable=g-long-lambda
           any(s.operation.token == 'Scanl1' for s in program.statements))
-    elif experiment == exp_module.Experiment.EXTEND_OP_FUNCTIONALITY:
+    elif experiment == exp_module.Experiment.ADD_OP_FUNCTIONALITY:
       operations = [dsl.OPERATIONS]
       lambdas = dsl.LAMBDAS
       # In _get_next_statements, we make sure the Scanl1 operation only
@@ -332,17 +332,14 @@ def sample_programs_experiment(
   if experiment == exp_module.Experiment.NONE:
     train_range = [1, 2, 3, 4, 5] if is_train else []
     test_range = [] if is_train else [1, 2, 3, 4, 5]
-  elif experiment == exp_module.Experiment.LENGTH_1_4_TO_5:
+  elif experiment == exp_module.Experiment.LENGTH_GENERALIZATION:
     train_range = [1, 2, 3, 4]
     test_range = [5]
-  elif experiment == exp_module.Experiment.LENGTH_4_TO_1_5:
-    train_range = [4]
-    test_range = [1, 2, 3, 5]
   elif experiment in [exp_module.Experiment.COMPOSE_DIFFERENT_CONCEPTS,
                       exp_module.Experiment.SWITCH_CONCEPT_ORDER,
                       exp_module.Experiment.COMPOSE_NEW_OP]:
     train_range = test_range = [2, 3, 4]
-  elif experiment == exp_module.Experiment.EXTEND_OP_FUNCTIONALITY:
+  elif experiment == exp_module.Experiment.ADD_OP_FUNCTIONALITY:
     train_range = test_range = [1, 2, 3, 4]
   else:
     raise ValueError(f'Unhandled experiment: {experiment}')

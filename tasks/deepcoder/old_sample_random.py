@@ -20,8 +20,8 @@ import functools
 import random
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
+from exedec.tasks import experiment as exp_module
 from exedec.tasks.deepcoder import deepcoder_dsl as dsl
-from exedec.tasks.deepcoder import experiment as exp_module
 
 # Multiple inputs for one example.
 InputsList = List[Union[int, List[int]]]
@@ -201,7 +201,7 @@ def random_statement(program_state: dsl.ProgramState,
   args = []
   for t in random_op.inputs_type:
     if isinstance(t, tuple):  # Argument is a lambda.
-      if (experiment == exp_module.Experiment.EXTEND_OP_FUNCTIONALITY and
+      if (experiment == exp_module.Experiment.ADD_OP_FUNCTIONALITY and
           is_train and random_op.token == 'Scanl1'):
         valid_lambdas = dsl.LAMBDAS_ONLY_MINUS_MIN
       else:

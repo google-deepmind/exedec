@@ -29,8 +29,8 @@ from absl import logging
 
 import tensorflow as tf
 
+from exedec.tasks import experiment as exp_module
 from exedec.tasks.deepcoder import deepcoder_dsl as dsl
-from exedec.tasks.deepcoder import experiment as exp_module
 from exedec.tasks.deepcoder import old_sample_random
 from exedec.tasks.deepcoder import sample_random
 

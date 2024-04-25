@@ -67,11 +67,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 from absl import flags
 
 _DEEPCODER_MAX_LIST_LENGTH = flags.DEFINE_integer(
-    'deepcoder_max_list_length', 20,
+    'deepcoder_max_list_length', 5,
     'The maximum length of a DeepCoder list input.')
 
 _DEEPCODER_MAX_INT = flags.DEFINE_integer(
-    'deepcoder_max_int', 256,
+    'deepcoder_max_int', 50,
     'The maximum value of a DeepCoder int.')
 
 

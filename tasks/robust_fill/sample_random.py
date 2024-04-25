@@ -120,7 +120,7 @@ def sample_inputs(num_examples: int,
     for _ in range(num_examples):
       input_lists.append([])
 
-    for i in range(n_toks):
+    for _ in range(n_toks):
       is_delimiter = random.randint(1, 3)
       if is_delimiter == 1:
         delimiter = random.choice(dsl.DELIMITER)

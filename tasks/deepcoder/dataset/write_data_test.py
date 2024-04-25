@@ -23,8 +23,8 @@ from absl.testing import flagsaver
 from absl.testing import parameterized
 import tensorflow as tf
 
+from exedec.tasks import experiment as exp_module
 from exedec.tasks.deepcoder import deepcoder_dsl
-from exedec.tasks.deepcoder import experiment as exp_module
 from exedec.tasks.deepcoder.dataset import write_data
 
 FLAGS = flags.FLAGS

@@ -266,13 +266,9 @@ def load_datasets(
 
   # Read data.
   if dataset_type == 'deepcoder':
-    if generalization_task == 'LENGTH_GENERALIZATION':
-      generalization_task = 'LENGTH_1_4_TO_5'
     dataset_dir = 'deepcoder_data'
     num_examples = 3
   elif dataset_type == 'robustfill':
-    if generalization_task == 'LENGTH_GENERALIZATION':
-      generalization_task = 'LENGTH_1_6_TO_7_10'
     dataset_dir = 'robustfill_data'
     num_examples = 4
   else:
@@ -308,8 +304,7 @@ def load_datasets(
 
   # Select a good mix of lengths.
   max_length = 3
-  if generalization_task.startswith('LENGTH_'):
-    # Remember, generalization_task has been changed to 'LENGTH_1_4_TO_5' etc.
+  if generalization_task == 'LENGTH_GENERALIZATION':
     few_shot_max_length = max_length - 1
   else:
     few_shot_max_length = max_length
@@ -320,7 +315,7 @@ def load_datasets(
       max_length=few_shot_max_length,
       dataset_type=dataset_type)
 
-  if generalization_task.startswith('LENGTH_'):
+  if generalization_task == 'LENGTH_GENERALIZATION':
     # For length generalization, the test programs don't come from the actual
     # test dataset which has only programs of very long length. Instead, test on
     # programs of length `max_length` gathered from the training dataset, and
