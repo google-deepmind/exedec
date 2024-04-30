@@ -47,19 +47,19 @@ _TARGET_TASK = flags.DEFINE_enum(
         'COMPOSE_DIFFERENT_CONCEPTS',
         'SWITCH_CONCEPT_ORDER',
         'COMPOSE_NEW_OP',
-        'EXTEND_OP_FUNCTIONALITY',
+        'ADD_OP_FUNCTIONALITY',
     ],
-    'One task to run.',
+    'If specified, only run one generalization task.',
 )
 
 _NUM_FEW_SHOT_EXAMPLES = flags.DEFINE_integer(
-    'num_few_shot_examples', 8,
+    'num_few_shot_examples', 4,
     'Number of few-shot examples to include in a prompt.')
 _NUM_TEST_PROBLEMS = flags.DEFINE_integer(
     'num_test_problems', 200,
     'Number of test problems per generalization task.')
 _NUM_SAMPLES = flags.DEFINE_integer(
-    'num_samples', 10,
+    'num_samples', 1,
     'Number of samples to draw for one problem.')
 _TEMPERATURE = flags.DEFINE_float(
     'temperature', 0.0, 'Temperature for the LLM.'
@@ -72,6 +72,8 @@ _LLM_CACHE_DIR = flags.DEFINE_string(
     'llm_cache_dir', '~/llm_cache',
     'Directory for storing the LLM cache.')
 
+# The ICLR'24 paper used version_robustfill=1, version_deepcoder=1, and
+# version_deepcoder=4 (DeepCoder-Pythonic in the paper).
 _VERSION_DEEPCODER = flags.DEFINE_integer(
     'version_deepcoder', 1, 'Version of Python programs and prompts to use.'
 )
@@ -446,11 +448,11 @@ def run_entire_experiment() -> dict[str, dict[str, list[dict[str, Any]]]]:
     all_results[dataset_type] = {}
     for generalization_task in [
         'NONE',
-        'LENGTH_GENERALIZATION',  # Will get renamed.
+        'LENGTH_GENERALIZATION',
         'COMPOSE_DIFFERENT_CONCEPTS',
         'SWITCH_CONCEPT_ORDER',
         'COMPOSE_NEW_OP',
-        'EXTEND_OP_FUNCTIONALITY',
+        'ADD_OP_FUNCTIONALITY',
     ]:
       if _TARGET_TASK.value is not None:
         if generalization_task != _TARGET_TASK.value:

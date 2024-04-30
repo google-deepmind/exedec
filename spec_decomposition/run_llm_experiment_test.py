@@ -200,10 +200,10 @@ class RunLlmExperimentTest(absltest.TestCase):
     expected_successes = {
         'deepcoder': ['COMPOSE_DIFFERENT_CONCEPTS',
                       'SWITCH_CONCEPT_ORDER',
-                      'EXTEND_OP_FUNCTIONALITY'],
+                      'ADD_OP_FUNCTIONALITY'],
         'robustfill': ['LENGTH_GENERALIZATION',
                        'COMPOSE_NEW_OP',
-                       'EXTEND_OP_FUNCTIONALITY'],
+                       'ADD_OP_FUNCTIONALITY'],
     }
 
     # Run the experiment.
