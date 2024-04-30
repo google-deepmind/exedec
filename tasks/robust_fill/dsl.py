@@ -135,7 +135,9 @@ class Base(abc.ABC):
 
 
 class Program(Base):
-  pass
+
+  def __call__(self, value: str) -> str:
+    raise NotImplementedError()
 
 
 class Concat(Program):

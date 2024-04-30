@@ -7,6 +7,16 @@ compositional generalization splits. By default these scripts generate small
 datasets locally just for testing purposes, but you can edit the scripts to
 generate larger datasets using a cloud computing platform.
 
+# Test Datasets
+
+For convenience and reproducibility, we provide the test datasets used in the
+ICLR'24 experiments. `data/test_data/` contains test problems for the
+experiments on Transformers trained from scratch, and `data/llm_data/` contains
+test problems and few-shot examples for the LLM experiments.
+
+`data/data_utils.py` contains details about the data format and provides helpful
+utility functions.
+
 # TODO
 everything below here is TODO
 

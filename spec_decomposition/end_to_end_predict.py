@@ -65,11 +65,11 @@ _EXPERIMENT = flags.DEFINE_string(
 _TEST_DATASET_FORMAT = flags.DEFINE_string(
     'test_dataset_format', None, 'Filepattern for TFRecord test dataset.')
 _NUM_TEST_BATCHES = flags.DEFINE_integer(
-    'num_test_batches', 200, 'Number of test batches.')
+    'num_test_batches', 1000, 'Number of test batches.')
 _NUM_EXAMPLES = flags.DEFINE_integer(
     'num_examples', 4, 'Number of input/output strings per task.')
 _MAX_IO_LENGTH = flags.DEFINE_integer(
-    'max_io_length', 120,
+    'max_io_length', 200,
     'Maximum number of characters in input/output strings.')
 _MAX_PROGRAM_LENGTH = flags.DEFINE_integer(
     'max_program_length', 100, 'Maximum number of tokens in program.')
@@ -889,7 +889,7 @@ def main(_):
   if not _TEST_DATASET_FORMAT.value:
     raise ValueError('Must specify filepattern to dataset.')
 
-  # Training dataset.
+  # Test dataset.
   test_dataset_path = format_path(_TEST_DATASET_FORMAT.value)
   logging.info('Loading dataset from %s', test_dataset_path)
   padded_shapes = {
