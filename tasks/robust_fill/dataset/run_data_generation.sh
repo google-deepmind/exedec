@@ -64,8 +64,7 @@ splits=$(printf ",%s" "${splits_array[@]}")
 splits=${splits:1}
 
 # Launch the experiment.
-gxm xm_run.py \
-  --noxm_monitor_on_launch \
+xmanager launch xm_run.py -- \
   --exp_title=generate_${dataset_name} \
   --seed=${seed} \
   --save_dir=${base_save_dir}/${dataset_name} \

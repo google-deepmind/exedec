@@ -54,6 +54,9 @@ if ${GENERATE_FULL_DATA}; then
   num_searches_train=64
 
   # 10K test examples, although the experiments only use the first 1000 of them.
+  # If you are generating completely new test datasets, it may be better to set
+  # num_programs_per_search_test=1 to get more variety in program inputs (which
+  # will be the same for all programs obtained from one search).
   num_shards_test=100
   num_programs_per_search_test=10
   num_searches_test=10
@@ -75,8 +78,7 @@ splits=$(printf ",%s" "${splits_array[@]}")
 splits=${splits:1}
 
 # Launch the experiment.
-gxm xm_run.py \
-  --noxm_monitor_on_launch \
+xmanager launch xm_run.py -- \
   --exp_title=generate_${dataset_name} \
   --seed=${seed} \
   --save_dir=${base_save_dir}/${dataset_name} \

@@ -18,7 +18,6 @@
 # pytype: disable=wrong-arg-count
 # pytype: disable=attribute-error
 
-import ast
 import collections
 import functools
 import itertools
@@ -57,7 +56,7 @@ _SAVE_DIR = flags.DEFINE_string(
 # Flags for dataset info.
 _DATASET_TYPE = flags.DEFINE_enum(
     'dataset_type', 'robustfill',
-    ['robustfill', 'robustfill_base', 'deepcoder'],
+    ['robustfill', 'deepcoder'],
     'The kind of dataset to use.')
 _EXPERIMENT = flags.DEFINE_string(
     'experiment', 'NONE',
@@ -74,7 +73,7 @@ _MAX_IO_LENGTH = flags.DEFINE_integer(
 _MAX_PROGRAM_LENGTH = flags.DEFINE_integer(
     'max_program_length', 100, 'Maximum number of tokens in program.')
 _MAX_SPEC_PART_LENGTH = flags.DEFINE_integer(
-    'max_spec_part_length', 200, 'Maximum number of characters in spec part.')
+    'max_spec_part_length', 85, 'Maximum number of characters in spec part.')
 
 # Model training hyperparameters.
 _SPEC_DECOMPOSER_PATH_FORMAT = flags.DEFINE_string(
@@ -87,9 +86,9 @@ _SEED = flags.DEFINE_integer(
     'seed', 0,
     'Seed used for training.')
 _EMBEDDING_DIM = flags.DEFINE_integer(
-    'embedding_dim', 256, 'Embedding dimension.')
+    'embedding_dim', 512, 'Embedding dimension.')
 _HIDDEN_DIM = flags.DEFINE_integer(
-    'hidden_dim', 512, 'Hidden dimension.')
+    'hidden_dim', 1024, 'Hidden dimension.')
 _NUM_HEADS = flags.DEFINE_integer(
     'num_heads', 4, 'Number of layers.')
 _NUM_LAYERS = flags.DEFINE_integer(
@@ -102,7 +101,7 @@ _SPEC_DECOMPOSER_NUM_POSITION_BUCKETS = flags.DEFINE_integer(
     'spec_decomposer_num_position_buckets', 32,
     'Number of relative attention position buckets in SpecDecomposer.')
 _SYNTHESIZER_NUM_POSITION_BUCKETS = flags.DEFINE_integer(
-    'synthesizer_num_position_buckets', 16,
+    'synthesizer_num_position_buckets', 32,
     'Number of relative attention position buckets in Synthesizer.')
 _SPEC_DECOMPOSER_MAX_DISTANCE = flags.DEFINE_integer(
     'spec_decomposer_max_distance', 128,
@@ -135,8 +134,8 @@ _PREDICTION_TYPE = flags.DEFINE_enum(
     ['separate', 'joint'],
     'Whether to use separate models (SpecDecomposerModel and then '
     'SynthesizerModel) or one joint prediction model.')
-_SLOW_DECODE = flags.DEFINE_boolean(
-    'slow_decode', True, 'Use slow decoding for prediction?')
+
+SLOW_DECODE = True
 
 # Note: if detect_invalid=False, a prediction could be wrong but we must do our
 # best to continue anyway. Specifically:
@@ -168,9 +167,6 @@ _NUM_EXAMPLES_TO_LOG = flags.DEFINE_integer(
 _NUM_BEAM_ELEMENTS_TO_LOG = flags.DEFINE_integer(
     'num_beam_elements_to_log', 4,
     'Number of beam elements to log and save to TensorBoard text.')
-
-_HPARAMS = flags.DEFINE_string(
-    'hparams', None, 'String specifying hyperparameter search.')
 
 # Test dataset input pipeline.
 # -----------------------------------------------------------------------------
@@ -391,23 +387,7 @@ def end_to_end_predict_step(params,
           method=models.DecomposeAttentionTransformer.decode)
       return flat_logits
   else:
-    def tokens_ids_to_logits(flat_ids, flat_encoded, flat_encoded_padding_mask,
-                             flat_cache):
-      """Token slice to logits from decoder model."""
-      # --> [batch * beam, 1, vocab]
-      flat_logits, new_vars = models.DecomposeAttentionTransformer(
-          config=config).apply(
-              {'params': params, 'cache': flat_cache},
-              flat_ids,
-              flat_encoded,
-              flat_encoded_padding_mask,
-              mutable=['cache'],
-              method=models.DecomposeAttentionTransformer.decode)
-      new_flat_cache = new_vars['cache']
-      # Remove singleton sequence-length dimension:
-      # [batch * beam, 1, vocab] --> [batch * beam, vocab]
-      flat_logits = flat_logits.squeeze(axis=1)
-      return flat_logits, new_flat_cache
+    raise NotImplementedError()
 
   # Using the above-defined single-step decoder function, run a
   # beam search over possible sequences given input encoding.
@@ -458,7 +438,7 @@ def load_spec_decomposer_model(init_rng, spec_vocab_size, io_shape,
       attention_dropout_rate=_ATTENTION_DROPOUT_RATE.value,
       use_relative_attention=_USE_RELATIVE_ATTENTION.value,
       deterministic=True,
-      decode=not _SLOW_DECODE.value,
+      decode=not SLOW_DECODE,
       bos_token=bos_id,
       num_input_relative_position_buckets=num_position_buckets,
       max_input_distance=max_distance,
@@ -496,7 +476,7 @@ def load_spec_decomposer_model(init_rng, spec_vocab_size, io_shape,
                         eos_token=eos_id,
                         max_decode_len=_MAX_SPEC_PART_LENGTH.value,
                         config=spec_decomposer_predict_config,
-                        slow_decode=_SLOW_DECODE.value),
+                        slow_decode=SLOW_DECODE),
       static_argnums=(5,),  # The `beam_size` argument.
   )
 
@@ -525,7 +505,7 @@ def load_synthesizer_model(init_rng, spec_vocab_size, program_vocab_size,
       attention_dropout_rate=_ATTENTION_DROPOUT_RATE.value,
       use_relative_attention=_USE_RELATIVE_ATTENTION.value,
       deterministic=True,
-      decode=not _SLOW_DECODE.value,
+      decode=not SLOW_DECODE,
       bos_token=bos_id,
       num_input_relative_position_buckets=num_position_buckets,
       max_input_distance=max_distance,
@@ -564,7 +544,7 @@ def load_synthesizer_model(init_rng, spec_vocab_size, program_vocab_size,
                         eos_token=eos_id,
                         max_decode_len=_MAX_PROGRAM_LENGTH.value,
                         config=synthesizer_predict_config,
-                        slow_decode=_SLOW_DECODE.value),
+                        slow_decode=SLOW_DECODE),
       static_argnums=(5,),  # The `beam_size` argument.
   )
 
@@ -590,18 +570,25 @@ def main(_):
   if not gfile.isdir(_SAVE_DIR.value):
     gfile.makedirs(_SAVE_DIR.value)
 
-  hparam_dict = ast.literal_eval(_HPARAMS.value)
-  hparam_str = 'hparams-' + ','.join(sorted([f'{k}={v}'
-                                             for k, v in hparam_dict.items()]))
+  # Determines how results are organized in TensorBoard.
+  tb_hparam_dict = {
+      'dataset_type': _DATASET_TYPE.value,
+      'prediction_type': _PREDICTION_TYPE.value,
+      'experiment': _EXPERIMENT.value,
+      'beam_size': _BEAM_SIZE.value,
+      'seed': _SEED.value,
+  }
+  tb_hparam_str = 'hparams-' + ','.join([f'{k}={v}'
+                                         for k, v in tb_hparam_dict.items()])
 
   write_summary = jax.host_id() == 0
-  tb_dir = (os.path.join(_SAVE_DIR.value, 'tb', hparam_str) if write_summary
+  tb_dir = (os.path.join(_SAVE_DIR.value, 'tb', tb_hparam_str) if write_summary
             else '')
   summary_writer = tensorboard.SummaryWriter(tb_dir)
   result_json_path = os.path.join(
       tb_dir, f'results-{_PREDICTION_TYPE.value}.json')
 
-  # TODO(jxihong): end-to-end loop is not batched right now.
+  # End-to-end loop is not batched.
   batch_size = 1
   io_shape = (batch_size, _NUM_EXAMPLES.value, _MAX_IO_LENGTH.value)
   spec_target_shape = (batch_size, _MAX_SPEC_PART_LENGTH.value)
@@ -611,7 +598,7 @@ def main(_):
   # ---------------------------------------------------------------------------
 
   # Build token tables.
-  if _DATASET_TYPE.value in ['robustfill', 'robustfill_base']:
+  if _DATASET_TYPE.value == 'robustfill':
     spec_vocab = robust_fill_dsl.CHARACTER + '|'
     spec_id_token_table = {i + 3: token for i, token in enumerate(spec_vocab)}
     bos_id = 1
@@ -643,7 +630,7 @@ def main(_):
 
   def decode_spec(target):
     """Convert from int tensor to a string."""
-    if _DATASET_TYPE.value in ['robustfill', 'robustfill_base', 'deepcoder']:
+    if _DATASET_TYPE.value in ['robustfill', 'deepcoder']:
       target = target[np.all([target != 0, target != bos_id, target != eos_id],
                              axis=0)].astype(np.int32)
       target = np.array(target)  # JAX arrays will fail dict lookups.
@@ -654,7 +641,7 @@ def main(_):
       raise ValueError('Unhandled dataset_type: {}'.format(_DATASET_TYPE.value))
 
   def encode_spec(target, max_target_length, add_eos=True):
-    if _DATASET_TYPE.value in ['robustfill', 'robustfill_base', 'deepcoder']:
+    if _DATASET_TYPE.value in ['robustfill', 'deepcoder']:
       tokens = (target.split(' ') if _DATASET_TYPE.value == 'deepcoder'
                 else list(target))
       token_ids = [spec_token_id_table[t] for t in tokens]
@@ -714,8 +701,6 @@ def main(_):
       output_parts_str = output_parts_str[:num_examples]
       output_parts_str += [''] * (num_examples - len(output_parts_str))
       assert len(output_parts_str) == num_examples
-      # TODO(kshi): maybe for DeepCoder, pad with the output instead of empty
-      # string. But this doesn't really matter, it's an ablation.
 
     step_outputs = [
         encode_spec(
@@ -723,7 +708,7 @@ def main(_):
         for output_part_str in output_parts_str
     ]
 
-    if _DATASET_TYPE.value in ['robustfill', 'robustfill_base']:
+    if _DATASET_TYPE.value == 'robustfill':
       current_outputs_str = []
       for part, output in zip(output_parts_str, decoded_outputs):
         if _DETECT_INVALID.value and not output.startswith(part):
@@ -811,7 +796,7 @@ def main(_):
   def process_and_decode_program(program_token_ids):
     """Returns a pair (valid, program)."""
     try:
-      if _DATASET_TYPE.value in ['robustfill', 'robustfill_base']:
+      if _DATASET_TYPE.value == 'robustfill':
         program = robust_fill_dsl.decode_program(
             process_predicted_program(program_token_ids, add_eos=True),
             program_id_token_table)
@@ -844,7 +829,7 @@ def main(_):
           valid = False
       else:
         try:
-          if _DATASET_TYPE.value in ['robustfill', 'robustfill_base']:
+          if _DATASET_TYPE.value == 'robustfill':
             outputs.append(program(i))
           elif _DATASET_TYPE.value == 'deepcoder':
             initial_state = deepcoder_dsl.ProgramState.from_str(i)
@@ -870,7 +855,7 @@ def main(_):
         traces.append(default_output)
       else:
         try:
-          if _DATASET_TYPE.value in ['robustfill', 'robustfill_base']:
+          if _DATASET_TYPE.value == 'robustfill':
             traces.append(program(i))
           elif _DATASET_TYPE.value == 'deepcoder':
             # Use entire program state (containing all local variables).
@@ -913,8 +898,7 @@ def main(_):
       batch_size, padded_shapes=padded_shapes, drop_remainder=False)
   test_dataset = test_dataset.take(_NUM_TEST_BATCHES.value)
 
-  # TODO(jxihong): Implement fast decoding.
-  assert _SLOW_DECODE.value, 'Fast decoding is not implemented yet.'
+  assert SLOW_DECODE, 'Fast decoding is not implemented.'
 
   rng = jax.random.PRNGKey(0)
   rng, init_rng = jax.random.split(rng)  # pylint: disable=unused-variable

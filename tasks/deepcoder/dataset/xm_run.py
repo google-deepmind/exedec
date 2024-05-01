@@ -115,10 +115,6 @@ def main(_):
 
   with xm_local.create_experiment(
       experiment_title=_EXP_TITLE.value) as xm_experiment:
-    annotations = xm_experiment.context.annotations
-    annotations.add_tags('spec_decomposition',
-                         'dataset_generation',
-                         'deepcoder')
 
     job = create_job(xm_experiment)
 
