@@ -1,52 +1,128 @@
-# Dataset Creation
+# ExeDec: Execution Decomposition for Compositional Generalization in Neural Program Synthesis
 
-Use the scripts `tasks/deepcoder/dataset/run_data_generation.sh` and
-`tasks/robust_fill/dataset/run_data_generation.sh` to generate train and test
-datasets for the DeepCoder and RobustFill DSLs, according to the different
-compositional generalization splits. By default these scripts generate small
-datasets locally just for testing purposes, but you can edit the scripts to
-generate larger datasets using a cloud computing platform.
+This repository provides code and datasets associated with our research paper
+published at ICLR'24 ([OpenReview](https://openreview.net/forum?id=oTRwljRgiv)).
 
-# Test Datasets
-
-For convenience and reproducibility, we provide the test datasets used in the
-ICLR'24 experiments. `data/test_data/` contains test problems for the
-experiments on Transformers trained from scratch, and `data/llm_data/` contains
-test problems and few-shot examples for the LLM experiments.
-
-`data/data_utils.py` contains details about the data format and provides helpful
-utility functions.
-
-# TODO
-everything below here is TODO
-
-# exedec
-
-TODO(b/329303239): Add a description for your new project, explain what is
-being released here, etc... Additional, the following sections are normally
-expected for all releases. Feel free to add additional sections if appropriate
-for your project.
+In this paper, we describe different forms of compositional generalization that
+are desirable in program synthesis and introduce datasets for measuring them. We
+also present ExeDec, a decomposition-based approach to program synthesis
+achieving higher compositional generalization on two domains compared to prior
+approaches, when applied to LLMs and small Transformers trained from scratch.
 
 ## Installation
 
-Write instructions for how the user should install your code. The instructions
-should ideally be valid when copy-pasted. You can combine this with the Usage
-section if there's no separate installation step.
+No installation is needed to use our test datasets which are provided as
+`*.jsonl` files.
 
-## Usage
+To generate training data or more test data, you will need to install
+[XManager](https://github.com/google-deepmind/xmanager),
+[NumPy](https://numpy.org/install/),
+[TensorFlow](https://www.tensorflow.org/install), and
+[Abseil Python](https://abseil.io/docs/python/quickstart):
 
-Write example usage of your code. The instructions should ideally be valid when
-copy-pasted, and will be used by your technical reviewer to verify that your
-package functions correctly.
+```
+pip install xmanager numpy tensorflow absl-py
+```
+
+To run our trained model checkpoints or train new models, you will additionally
+need [JAX](https://jax.readthedocs.io/en/latest/installation.html) and
+[Flax](https://flax.readthedocs.io/en/latest/#installation):
+
+```
+pip install "jax[cpu]" flax
+```
+
+Note, you may need to alter your JAX installation depending on your desired
+platform.
+
+
+TODO: check all of the above
+
+## Datasets
+
+The ICLR'24 paper includes experiments in two domains, DeepCoder and RobustFill.
+Within each domain, there are 6 different train/test splits, including 5 forms
+of compositional generalization relevant to programming
+(`LENGTH_GENERALIZATION`, `COMPOSE_DIFFERENT_CONCEPTS`, `SWITCH_CONCEPT_ORDER`,
+`COMPOSE_NEW_OP`, and `ADD_OP_FUNCTIONALITY`), and a scenario where no
+generalization is required (`NONE`).
+
+For convenience and reproducibility, we provide the **test datasets** used in
+the ICLR'24 experiments:
+
+* `data/test_data/` contains test problems for the experiments on small
+  Transformers trained from scratch, in JSON Lines format. This same data is
+  also provided in TFRecords format in a Google Cloud Storage
+  [bucket](https://console.developers.google.com/storage/browser/exedec),
+  because the TFRecords format is more convenient for use with our scripts for
+  evaluating these small Transformers.
+
+* `data/llm_data/` contains test problems and few-shot examples for the LLM
+  experiments, also in JSON Lines format.
+
+`data/data_utils.py` contains details about the data contents and provides
+helpful utility functions for parsing and evaluating programs in the dataset.
+
+#### Generating new data
+
+We additionally provide scripts to generate new train and test data (in
+TFRecords format) for the DeepCoder and RobustFill DSLs, according to the
+different compositional generalization splits:
+
+```
+bash tasks/deepcoder/dataset/run_data_generation.sh
+bash tasks/robust_fill/dataset/run_data_generation.sh
+```
+
+By default the scripts generate small datasets locally just for testing
+purposes, but you can edit the scripts to generate larger datasets using a cloud
+computing platform.
+
+These scripts use [XManager](https://github.com/google-deepmind/xmanager) to
+manage parallelization across CPU workers. You may instead use a different
+mechanism to coordinate workers so that each CPU worker directly calls
+`tasks/deepcoder/dataset/write_data.py` or
+`tasks/robust_fill/dataset/write_data.py` with appropriate command-line flags.
+
+## Trained model checkpoints
+
+We provide checkpoints for the Transformer models trained from scratch in a
+Google Cloud Storage bucket,
+[gs://exedec](https://console.developers.google.com/storage/browser/exedec). We
+include checkpoints for the ExeDec, Ablation, and Transformer Baseline
+approaches as described in the paper, trained on each dataset with 5 random
+initializations.
+
+In the `spec_decomposition/` directory, `run_deepcoder_end_to_end_predict.sh`
+and `run_robustfill_end_to_end_predict.sh` demonstrate how to evaluate the
+checkpoints on our datasets. However, you will likely need to edit the scripts
+to use ML accelerators with your preferred cloud computing platform. We mainly
+provide the scripts to demonstrate how `end_to_end_predict.py` should be invoked
+with command-line flags.
+
+## Training new models
+
+TODO
+
+## Other notes
+
+It may help to know the following, when navigating and interpreting the code:
+
+* The paper's "Execution Decomposition" technique is instead called
+  "spec_decomposition" in the code.
+* The paper's "SubgoalModel" is instead called "SpecDecomposerModel" in the
+  code.
+* The paper's "CombinedModel" is instead called "JointModel" in the code.
 
 ## Citing this work
 
-Add citation details here, usually a pastable BibTeX snippet:
+If you use our datasets or code, please cite our ICLR'24 paper:
 
 ```latex
-@article{publicationname,
-      title={Publication Name},
-      author={Author One and Author Two and Author Three},
+@inproceedings{shi2024exedec,
+      title={{ExeDec}: Execution Decomposition for Compositional Generalization in Neural Program Synthesis},
+      author={Kensen Shi and Joey Hong and Yinlin Deng and Pengcheng Yin and Manzil Zaheer and Charles Sutton},
+      booktitle={The Twelfth International Conference on Learning Representations},
       year={2024},
 }
 ```
