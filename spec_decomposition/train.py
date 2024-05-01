@@ -900,9 +900,6 @@ def main(_):
     logging.info('Found model checkpointed at step %d.', start_step)
 
     if not FLAGS.predict_only:
-      # TODO(kshi): It is likely that this code can lead to the job stalling for
-      # 10+ hours when restarting from a checkpoint that had been trained a long
-      # time, possibly because dataset skipping is slow.
       logging.info('Skipping %s steps...', start_step)
       train_ds = train_ds.skip(start_step)
       dummy_p_train_step = jax.pmap(
@@ -915,7 +912,6 @@ def main(_):
   # Replicate optimizer.
   optimizer = jax_utils.replicate(optimizer)
 
-  # TODO(jxihong): Implement fast decoding.
   assert FLAGS.slow_decode, 'Fast decoding is not implemented yet.'
 
   learning_rate_fn = create_learning_rate_scheduler(

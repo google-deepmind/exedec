@@ -677,7 +677,6 @@ def get_exe_dec_prompt_prefix(
     ablation_style: bool = False,
 ) -> str:
   """Gets a prefix of the ExeDec prompt describing one dataset element."""
-  # TODO(yldeng): support the ablation-style prompts
   s = '[BEGIN PROBLEM]\n'
   s += 'Input-output test cases:\n'
   num_examples = get_num_examples(dataset_element.inputs, dataset_type)

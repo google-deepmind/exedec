@@ -117,10 +117,6 @@ def _corrupt(next_parts, outputs, remaining_parts):
 
 def serialize_decomposition_examples(task, token_id_table):
   """Creates tf.Example messages for decomposition."""
-  # TODO(kshi): If we want to include length-2 programs in the subprogram
-  # synthesizer's training data, we'll need to create a separate dataset for
-  # that, since we don't want such data in the spec decomposer model's training
-  # data.
   output_parts = [[expr(inp) for expr in task.program.expressions]
                   for inp in task.inputs]
   assert all(''.join(parts) == out

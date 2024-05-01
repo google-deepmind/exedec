@@ -129,7 +129,6 @@ class DecomposeAttentionTransformer(nn.Module):
     if cfg.decode:
       # For fast decode with caching, programs shape == [batch_size, 1] and
       # cfg.shift = False, cfg.decode = True.
-      # TODO(jxihong): Fast decoding currently does not work with new attention.
       raise NotImplementedError()
 
     # Make attention masks.
