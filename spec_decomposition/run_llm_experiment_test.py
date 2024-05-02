@@ -135,13 +135,12 @@ def _response(dataset_element: llm_utils.DatasetElement) -> str:
 class RunLlmExperimentTest(absltest.TestCase):
 
   @mock.patch.object(run_llm_experiment, 'query_llm')
-  @mock.patch.object(llm_utils, 'load_datasets')
-  def test_run_entire_experiment(self, mock_load_datasets, mock_query_llm):
+  @mock.patch.object(llm_utils, 'load_jsonl_dataset')
+  def test_run_entire_experiment(self, mock_load_jsonl_dataset, mock_query_llm):
     # Don't actually write results to disk.
     saved_results_format = run_llm_experiment.RESULTS_FORMAT
     run_llm_experiment.RESULTS_FORMAT = os.path.join(
-        self.create_tempdir().full_path,
-        '{model}_{num_test_problems}-test_{num_samples}-samples.json')
+        self.create_tempdir().full_path, '{model}_{num_samples}-samples.json')
 
     model = 'mock_model'
 
@@ -163,20 +162,20 @@ class RunLlmExperimentTest(absltest.TestCase):
     # load_datasets is called 6 times for the DeepCoder generalization tasks and
     # then 6 more times for RobustFill. If we re-use a prompt, the LLM caching
     # will lead to duplicate samples, so ensure that the prompts are different.
-    mock_load_datasets.side_effect = [
-        ([DEEPCODER_1], [DEEPCODER_2]),
-        ([DEEPCODER_1], [DEEPCODER_3]),
-        ([DEEPCODER_2], [DEEPCODER_1]),
-        ([DEEPCODER_2], [DEEPCODER_3]),
-        ([DEEPCODER_3], [DEEPCODER_1]),
-        ([DEEPCODER_3], [DEEPCODER_2]),
+    mock_load_jsonl_dataset.side_effect = [
+        [(DEEPCODER_2, [DEEPCODER_1])],
+        [(DEEPCODER_3, [DEEPCODER_1])],
+        [(DEEPCODER_1, [DEEPCODER_2])],
+        [(DEEPCODER_3, [DEEPCODER_2])],
+        [(DEEPCODER_1, [DEEPCODER_3])],
+        [(DEEPCODER_2, [DEEPCODER_3])],
 
-        ([ROBUSTFILL_1], [ROBUSTFILL_2]),
-        ([ROBUSTFILL_1], [ROBUSTFILL_3]),
-        ([ROBUSTFILL_2], [ROBUSTFILL_1]),
-        ([ROBUSTFILL_2], [ROBUSTFILL_3]),
-        ([ROBUSTFILL_3], [ROBUSTFILL_1]),
-        ([ROBUSTFILL_3], [ROBUSTFILL_2]),
+        [(ROBUSTFILL_2, [ROBUSTFILL_1])],
+        [(ROBUSTFILL_3, [ROBUSTFILL_1])],
+        [(ROBUSTFILL_1, [ROBUSTFILL_2])],
+        [(ROBUSTFILL_3, [ROBUSTFILL_2])],
+        [(ROBUSTFILL_1, [ROBUSTFILL_3])],
+        [(ROBUSTFILL_2, [ROBUSTFILL_3])],
     ] * 2  # *2 because we'll repeat the experiment to test caching.
     # The corresponding 2 samples per prompt (since there is only 1 test problem
     # per generalization task).
@@ -207,10 +206,7 @@ class RunLlmExperimentTest(absltest.TestCase):
     }
 
     # Run the experiment.
-    with flagsaver.flagsaver(model=model,
-                             num_few_shot_examples=1,
-                             num_test_problems=1,
-                             num_samples=2):
+    with flagsaver.flagsaver(model=model, num_samples=2):
       all_results = run_llm_experiment.run_entire_experiment()
 
     # Check that we solved exactly the tasks we expected to solve.
@@ -227,10 +223,7 @@ class RunLlmExperimentTest(absltest.TestCase):
     # Check the caching by redoing the experiment but with only bad samples.
     mock_query_llm.reset_mock()
     mock_query_llm.return_value = [BAD_RESPONSE_1, BAD_RESPONSE_2]
-    with flagsaver.flagsaver(model=model,
-                             num_few_shot_examples=1,
-                             num_test_problems=1,
-                             num_samples=2):
+    with flagsaver.flagsaver(model=model, num_samples=2):
       all_results = run_llm_experiment.run_entire_experiment()
     for dataset_type in all_results:
       for generalization_task in all_results[dataset_type]:

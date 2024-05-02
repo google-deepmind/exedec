@@ -18,13 +18,11 @@
 import ast
 import collections
 import copy
-import math
-import random
+import json
 import re
 import types
 from typing import Any
 
-import numpy as np
 import tensorflow as tf
 
 from exedec.tasks.deepcoder import deepcoder_dsl
@@ -160,194 +158,50 @@ def create_dataset(file_pattern, num_examples):
   return dataset
 
 
-def get_handwritten_few_shot(dataset_type: str,
-                             generalization_task: str) -> tf.data.Dataset:
-  """Gets a dataset of handwritten few-shot examples."""
-  if dataset_type == 'robustfill':
-    raise ValueError('Not implemented yet')
-  if generalization_task != 'NONE':
-    raise ValueError('Not implemented yet')
-
-  problems = [
-      {  # Take the first few elements and sort them in reverse.
-          'inputs': ['x0 = [ 4 2 7 ] | x1 = 5',
-                     'x0 = [ -24 15 3 -8 ] | x1 = 3',
-                     'x0 = [ 18 22 36 13 29 4 15 10 7 ] | x1 = 6'],
-          'outputs': ['[ 7 4 2 ]', '[ 15 3 -24 ]', '[ 36 29 22 18 13 4 ]'],
-          'program': ('x0 = INPUT | x1 = INPUT | x2 = Take x1 x0 | '
-                      'x3 = Sort x2 | x4 = Reverse x3'),
-      },
-      {  # Compute the running sum of the even elements.
-          'inputs': ['x0 = [ 5 2 6 7 4 ]',
-                     'x0 = [ 19 2 12 6 11 15 7 8 ]',
-                     'x0 = [ 5 -4 6 7 -1 -2 4 1 -6 ]'],
-          'outputs': ['[ 2 8 12 ]', '[ 2 14 20 28 ]', '[ -4 2 0 4 -2 ]'],
-          'program': 'x0 = INPUT | x1 = Filter (%2==0) x0 | x2 = Scanl1 (+) x1',
-      },
-      {  # Count the number of negative elements.
-          'inputs': ['x0 = [ -4 2 6 7 -1 4 0 -3 ]',
-                     'x0 = [ 8 23 -14 32 -6 45 ]',
-                     'x0 = [ -6 -8 -14 -23 -11 ]'],
-          'outputs': ['3', '2', '5'],
-          'program': 'x0 = INPUT | x1 = Count (<0) x0',
-      },
-      {  # Map by (x^2 - x) and drop the first few elements.
-          'inputs': ['x0 = [ 1 4 5 2 ] | x1 = 1',
-                     'x0 = [ -2 3 -1 0 6 ] | x1 = 0 ',
-                     'x0 = [ -5 2 4 -3 1 7 5 ] | x1 = 3'],
-          'outputs': ['[ 12 20 2 ]', '[ 6 6 2 0 30 ]', '[ 12 0 42 20 ]'],
-          'program': ('x0 = INPUT | x1 = INPUT | x2 = Map (**2) x0 | '
-                      'x3 = ZipWith (-) x2 x0 | x4 = Drop x1 x3'),
-      },
-  ]
-  return tf.data.Dataset.from_tensor_slices({
-      'inputs': tf.constant([p['inputs'] for p in problems]),
-      'outputs': tf.constant([p['outputs'] for p in problems]),
-      'program': tf.constant([p['program'] for p in problems]),
-  })
-
-
-def program_len(d: DatasetElement, dataset_type: str) -> int:
+def json_to_dataset_element(json_dict: dict[str, Any],
+                            dataset_type: str,
+                            version: int) -> DatasetElement:
+  """Converts a json dict to a DatasetElement."""
+  dsl_program = json_dict['program']
   if dataset_type == 'deepcoder':
-    return d.dsl_program.count('|') - d.dsl_program.count('INPUT') + 1
+    program_object = deepcoder_dsl.Program.from_str(dsl_program)
+    python_program = program_object.to_python_program(version=version)
   elif dataset_type == 'robustfill':
-    return d.dsl_program.count('|') + 1
+    program_tokens = [int(t) for t in dsl_program.replace('|', ' ').split()]
+    program_tokens.append(ROBUSTFILL_EOS_ID)
+    program_object = robustfill_dsl.decode_program(
+        encoding=program_tokens, id_token_table=ROBUSTFILL_ID_TOKEN_TABLE)
+    python_program = program_object.to_python_program(version=version)
   else:
-    raise ValueError(f'Unhandled dataset type: {dataset_type}')
+    raise ValueError(f'Unknown dataset_type: {dataset_type}')
+
+  return DatasetElement(
+      inputs=json_dict['inputs'],
+      outputs=json_dict['outputs'],
+      dsl_program=dsl_program,
+      python_program=python_program,
+  )
 
 
-def distribute_lengths(
-    dataset: list[DatasetElement],
-    target_size: int,
-    max_length: int,
-    dataset_type: str,
-) -> tuple[list[DatasetElement], dict[int, list[DatasetElement]]]:
-  """Selects a subset of elements with an even distribution of lengths."""
-  data_by_length = collections.defaultdict(list)
-  for element in dataset:
-    data_by_length[program_len(element, dataset_type)].append(element)
-
-  available_lengths = [length for length in data_by_length
-                       if length <= max_length]
-  num_per_length = math.ceil(target_size / len(available_lengths))
-  selected = []
-  for length in available_lengths:
-    if len(data_by_length[length]) < num_per_length:
-      raise ValueError(
-          f'Not enough programs of length {length}: '
-          f'need {num_per_length}, found {len(data_by_length[length])}')
-    selected.extend(data_by_length[length][:num_per_length])
-  random.shuffle(selected)
-  selected = selected[:target_size]
-  assert len(selected) == target_size
-  return selected, data_by_length
-
-
-def load_datasets(
+def load_jsonl_dataset(
     dataset_type: str,
     generalization_task: str,
-    num_few_shot_examples: int,
-    num_test_problems: int,
     data_format: str,
     version: int,
-) -> tuple[list[DatasetElement], list[DatasetElement]]:
-  """Loads a few-shot dataset and a test dataset."""
-  if num_few_shot_examples > MAX_NUM_FEW_SHOT_EXAMPLES:
-    raise ValueError(f'Too many few shot examples: {num_few_shot_examples}')
-  if num_test_problems > MAX_NUM_TEST_PROBLEMS:
-    raise ValueError(f'Too many test problems: {num_test_problems}')
-
-  # Set a seed for deterministic dataset shuffling. Set the seed here, not just
-  # once elsewhere, so that the dataset shuffling is not dependent on the order
-  # the datasets are constructed in.
-  tf.random.set_seed(0)
-  random.seed(0)
-  np.random.seed(0)
-
-  # Read data.
-  if dataset_type == 'deepcoder':
-    dataset_dir = 'deepcoder_data'
-    num_examples = 3
-  elif dataset_type == 'robustfill':
-    dataset_dir = 'robustfill_data'
-    num_examples = 4
-  else:
-    raise ValueError(f'Unhandled dataset type: {dataset_type}')
-
-  train_data_path = data_format.format(
-      dataset_dir=dataset_dir, generalization_task=generalization_task,
-      split='train')
-  test_data_path = data_format.format(
-      dataset_dir=dataset_dir, generalization_task=generalization_task,
-      split='test')
-
-  target_few_shot_dataset_size = (
-      MAX_NUM_TEST_PROBLEMS * MAX_NUM_FEW_SHOT_EXAMPLES)
-  few_shot_tf_dataset = (
-      create_dataset(train_data_path, num_examples)
-      .shuffle(100000)
-      .take(target_few_shot_dataset_size * 20))
-  test_tf_dataset = (
-      create_dataset(test_data_path, num_examples)
-      .take(1000)  # Other experiments only use the first 1000 test problems.
-      .shuffle(1000))  # Shuffle them all.
-
-  if version == 5:
-    few_shot_tf_dataset = get_handwritten_few_shot(
-        dataset_type, generalization_task)
-
-  # Parse each `tf.data.Dataset` into list[DatasetElement].
-  few_shot_dataset = parse_dataset(
-      few_shot_tf_dataset, dataset_type=dataset_type, version=version)
-  test_dataset = parse_dataset(
-      test_tf_dataset, dataset_type=dataset_type, version=version)
-
-  # Select a good mix of lengths.
-  max_length = 3
-  if generalization_task == 'LENGTH_GENERALIZATION':
-    few_shot_max_length = max_length - 1
-  else:
-    few_shot_max_length = max_length
-
-  selected_few_shot, few_shot_by_length = distribute_lengths(
-      few_shot_dataset,
-      target_size=target_few_shot_dataset_size,
-      max_length=few_shot_max_length,
-      dataset_type=dataset_type)
-
-  if generalization_task == 'LENGTH_GENERALIZATION':
-    # For length generalization, the test programs don't come from the actual
-    # test dataset which has only programs of very long length. Instead, test on
-    # programs of length `max_length` gathered from the training dataset, and
-    # use programs of shorter length for few-shot examples.
-    selected_test = few_shot_by_length[max_length][:MAX_NUM_TEST_PROBLEMS]
-    if len(selected_test) != MAX_NUM_TEST_PROBLEMS:
-      raise ValueError(f'Not enough test problems: need '
-                       f'{MAX_NUM_TEST_PROBLEMS}, have {len(selected_test)}')
-  else:
-    selected_test, _ = distribute_lengths(
-        test_dataset,
-        target_size=MAX_NUM_TEST_PROBLEMS,
-        max_length=max_length,
-        dataset_type=dataset_type)
-
-  selected_test = selected_test[:num_test_problems]
-  assert len(selected_test) == num_test_problems
-
-  return selected_few_shot, selected_test
-
-
-def few_shot_examples_for_test_index(
-    few_shot_dataset: list[DatasetElement],
-    test_index: int,
-    num_few_shot_examples: int) -> list[DatasetElement]:
-  """Returns the slice of few-shot examples for the test problem index."""
-  if num_few_shot_examples > MAX_NUM_FEW_SHOT_EXAMPLES:
-    raise ValueError(f'Too many few-shot examples: {num_few_shot_examples}')
-  start_index = test_index * MAX_NUM_FEW_SHOT_EXAMPLES
-  ans = few_shot_dataset[start_index : start_index + num_few_shot_examples]
-  assert len(ans) == num_few_shot_examples
-  return ans
+) -> list[tuple[DatasetElement, list[DatasetElement]]]:
+  """Returns a list of tuples (test problem, few-shot examples for it)."""
+  data_filename = data_format.format(
+      dataset_type=dataset_type, generalization_task=generalization_task)
+  with open(data_filename, 'r') as f:
+    all_json_data = [json.loads(line) for line in f.readlines()]
+  dataset = []
+  for json_data in all_json_data:
+    test_problem = json_to_dataset_element(
+        json_data['test_problem'], dataset_type, version)
+    few_shots = [json_to_dataset_element(few_shot_data, dataset_type, version)
+                 for few_shot_data in json_data['few_shot_examples']]
+    dataset.append((test_problem, few_shots))
+  return dataset
 
 
 def get_namespace(dataset_type: str) -> dict[str, Any]:

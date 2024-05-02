@@ -13,11 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Measure compositional generalization ability of LLMs."""
+r"""Measure compositional generalization ability of LLMs.
+
+From the `exedec` directory:
+
+python spec_decomposition/run_llm_experiment.py \
+    --model=favorite_llm --prompt_format=exedec
+"""
 
 import json
 import multiprocessing.dummy
 import os
+import sys
 import timeit
 from typing import Any, Callable
 
@@ -25,6 +32,9 @@ from absl import app
 from absl import flags
 import tensorflow as tf
 import tqdm
+
+sys.path.append('../')
+# pylint: disable=g-import-not-at-top
 
 from exedec.spec_decomposition import cached_llm_access
 from exedec.spec_decomposition import llm_utils
@@ -52,12 +62,6 @@ _TARGET_TASK = flags.DEFINE_enum(
     'If specified, only run one generalization task.',
 )
 
-_NUM_FEW_SHOT_EXAMPLES = flags.DEFINE_integer(
-    'num_few_shot_examples', 4,
-    'Number of few-shot examples to include in a prompt.')
-_NUM_TEST_PROBLEMS = flags.DEFINE_integer(
-    'num_test_problems', 200,
-    'Number of test problems per generalization task.')
 _NUM_SAMPLES = flags.DEFINE_integer(
     'num_samples', 1,
     'Number of samples to draw for one problem.')
@@ -81,8 +85,10 @@ _VERSION_ROBUSTFILL = flags.DEFINE_integer(
     'version_robustfill', 1, 'Version of Python programs and prompts to use.'
 )
 
-DATA_FORMAT = '{dataset_dir}/{generalization_task}_data/entire_programs_{split}.tf_records-*-of-*'
-RESULTS_FORMAT = 'exedec_results/{prompt_format}_{model}_{num_test_problems}-test_{num_samples}-samples_{temperature}-temperature_deepcoder-v{version_deepcoder}_robustfill-v{version_robustfill}.json'
+DATA_FORMAT = 'data/llm_data/{dataset_type}/{generalization_task}.jsonl'
+RESULTS_FORMAT = os.path.join(
+    os.path.expanduser('~/exedec_results'),
+    '{prompt_format}_{model}_{num_samples}-samples_{temperature}-temperature_deepcoder-v{version_deepcoder}_robustfill-v{version_robustfill}.json')
 MAX_NUM_DEC_STEPS = 3
 
 DatasetElement = llm_utils.DatasetElement
@@ -121,7 +127,7 @@ def query_llm(
     n: int,
     temperature: float,
     model: str,
-    num_output_tokens: int | None = 512) -> list[str]:
+    num_output_tokens: int) -> list[str]:
   """Queries an LLM with the given prompt, drawing n samples."""
   del prompt, n, temperature, model, num_output_tokens
   raise NotImplementedError('Call your favorite LLM here.')
@@ -328,7 +334,7 @@ def solve_problem_exedec(
 
 
 def solver_parallel_run(func: Callable, inputs, num_workers: int):  # pylint: disable=g-bare-generic
-  """Run solvers in parallel with multi threading."""
+  """Run solvers in parallel with multithreading."""
   # Run the solvers and show metrics.
   total_cnt, pass_cnt = 0, 0
   with multiprocessing.dummy.Pool(processes=num_workers) as p:
@@ -359,26 +365,20 @@ def run_experiment(
   """Runs the experiment for a generalization task."""
   print(f'Running experiment for {dataset_type} {generalization_task}...',
         flush=True)
-  t_start = timeit.default_timer()
   if dataset_type == 'robustfill':
     version = _VERSION_ROBUSTFILL.value
   elif dataset_type == 'deepcoder':
     version = _VERSION_DEEPCODER.value
   else:
     raise ValueError(f'Unhandled dataset type: {dataset_type}')
-  few_shot_dataset, test_dataset = llm_utils.load_datasets(
+  dataset = llm_utils.load_jsonl_dataset(
       dataset_type=dataset_type,
       generalization_task=generalization_task,
-      num_few_shot_examples=_NUM_FEW_SHOT_EXAMPLES.value,
-      num_test_problems=_NUM_TEST_PROBLEMS.value,
       data_format=DATA_FORMAT,
       version=version,
   )
-  t_end = timeit.default_timer()
-  print(
-      f'Loaded {len(few_shot_dataset)} examples in {t_end - t_start} seconds',
-      flush=True,
-  )
+  num_test = len(dataset)
+  print(f'Loaded {num_test} test problems', flush=True)
 
   results = []
   num_output_tokens = _sample_length(dataset_type)
@@ -386,17 +386,9 @@ def run_experiment(
   ablation_style = prompt_format == 'exedec_ablation'
 
   solver_inputs = []
-  for problem_index in range(_NUM_TEST_PROBLEMS.value):
+  for problem_index in range(num_test):
 
-    test_problem = test_dataset[problem_index]
-    if version == 5:
-      few_shot_examples = few_shot_dataset
-    else:
-      few_shot_examples = llm_utils.few_shot_examples_for_test_index(
-          few_shot_dataset=few_shot_dataset,
-          test_index=problem_index,
-          num_few_shot_examples=_NUM_FEW_SHOT_EXAMPLES.value)
-      assert len(few_shot_examples) == _NUM_FEW_SHOT_EXAMPLES.value
+    test_problem, few_shot_examples = dataset[problem_index]
     solver_inputs.append([
         problem_index,
         few_shot_examples,
@@ -465,7 +457,6 @@ def run_entire_experiment() -> dict[str, dict[str, list[dict[str, Any]]]]:
   results_path = RESULTS_FORMAT.format(
       prompt_format=_PROMPT_FORMAT.value,
       model=_MODEL.value.split('/')[-1],
-      num_test_problems=_NUM_TEST_PROBLEMS.value,
       num_samples=_NUM_SAMPLES.value,
       temperature=_TEMPERATURE.value,
       version_deepcoder=_VERSION_DEEPCODER.value,

@@ -23,6 +23,10 @@ import tensorflow as tf
 
 from exedec.spec_decomposition import llm_utils
 
+DEEPCODER_JSONL_DATA = r'''
+{"index": 0, "test_problem": {"inputs": {"x0": [[], [1, 0, 6, 9, 1], [3, 7, 1, 4]], "x1": [[0], [9], [-3, -1]]}, "outputs": [[], [9, 4, 6, 9, 1], [4, 7, 1, 4]], "program": "x0 = INPUT | x1 = INPUT | x2 = Sort x0 | x3 = Reverse x2 | x4 = Map (/3) x3 | x5 = Map (**2) x4 | x6 = ZipWith (max) x0 x5"}, "few_shot_examples": [{"inputs": {"x0": [[4, 2, 7], [-24, 15, 3, -8], [18, 22, 36, 13, 29, 4, 15, 10, 7]], "x1": [5, 3, 6]}, "outputs": [[7, 4, 2], [15, 3, -24], [36, 29, 22, 18, 13, 4]], "program": "x0 = INPUT | x1 = INPUT | x2 = Take x1 x0 | x3 = Sort x2 | x4 = Reverse x3"}, {"inputs": {"x0": [[5, 2, 6, 7, 4], [19, 2, 12, 6, 11, 15, 7, 8], [5, -4, 6, 7, -1, -2, 4, 1, -6]]}, "outputs": [[2, 8, 12], [2, 14, 20, 28], [-4, 2, 0, 4, -2]], "program": "x0 = INPUT | x1 = Filter (%2==0) x0 | x2 = Scanl1 (+) x1"}]}
+'''.strip()
+
 DEEPCODER_DATASET = tf.data.Dataset.from_tensors({
     'inputs': ['x0 = [ ] | x1 = [ 0 ]',
                'x0 = [ 1 0 6 9 1 ] | x1 = [ 9 ]',
@@ -181,6 +185,14 @@ ROBUSTFILL_TEST_PROBLEM = llm_utils.DatasetElement(
 
 class LlmUtilsTest(parameterized.TestCase):
 
+  def _load_deepcoder_dataset(self, version):
+    jsonl_file = self.create_tempfile(content=DEEPCODER_JSONL_DATA)
+    return llm_utils.load_jsonl_dataset(
+        dataset_type='deepcoder',
+        generalization_task='NONE',
+        data_format=jsonl_file.full_path,
+        version=version)
+
   def test_to_python_form(self):
     original = 'x1 = [ 1 2 ] | x2 = 3'
     python_form = 'x1 = [1, 2], x2 = 3'
@@ -191,7 +203,17 @@ class LlmUtilsTest(parameterized.TestCase):
       ('2', 2, DEEPCODER_EXAMPLE_V2),
       ('3', 3, DEEPCODER_EXAMPLE_V3),
       ('4', 4, DEEPCODER_EXAMPLE_V4),
-      ('5', 5, DEEPCODER_EXAMPLE_V3),  # Same program as v3.
+  )
+  def test_load_jsonl_dataset_deepcoder(self, version, expected_example):
+    dataset = self._load_deepcoder_dataset(version)
+    test_problem, _ = dataset[0]
+    self.assertEqual(test_problem, expected_example)
+
+  @parameterized.named_parameters(
+      ('1', 1, DEEPCODER_EXAMPLE),
+      ('2', 2, DEEPCODER_EXAMPLE_V2),
+      ('3', 3, DEEPCODER_EXAMPLE_V3),
+      ('4', 4, DEEPCODER_EXAMPLE_V4),
   )
   def test_parse_dataset_deepcoder(self, version, expected_example):
     self.assertEqual(
@@ -532,118 +554,14 @@ Program:
 """.lstrip()
     self.assertEqual(prompt, expected)
 
-  def test_few_shot_prompt_deepcoder_version_5(self):
-    # Temporarily raise the list length limit to run this test,
-    # because the handwritten examples have longer inputs.
-    original_value = llm_utils.DEEPCODER_MAX_LIST_LENGTH
-    llm_utils.DEEPCODER_MAX_LIST_LENGTH = 10
-    few_shot_dataset = llm_utils.parse_dataset(
-        llm_utils.get_handwritten_few_shot('deepcoder', 'NONE'),
-        dataset_type='deepcoder',
-        version=5)
-    prompt = llm_utils.few_shot_prompt(
-        few_shot_examples=few_shot_dataset[:2],
-        test_problem=DEEPCODER_TEST_PROBLEM,
-        dataset_type='deepcoder',
-        version=5,
-    )
-    # Change back to default value
-    llm_utils.DEEPCODER_MAX_LIST_LENGTH = original_value
-    expected = """
-The `dsl` module is a custom library for manipulating lists of integers. It contains the following functions:
-
-def Scanl1(f, xs):
-  ys = []
-  for i, x in enumerate(xs):
-    if i == 0:
-      ys.append(x)
-    else:
-      ys.append(f(ys[-1], x))
-  return ys
-
-Additionally, the module defines the following constants:
-
-PLUS_ONE = lambda x: x + 1
-MINUS_ONE = lambda x: x - 1
-TIMES_TWO = lambda x: x * 2
-DIV_TWO = lambda x: x // 2
-NEGATE = lambda x: -x
-SQUARE = lambda x: x ** 2
-TIMES_THREE = lambda x: x * 3
-DIV_THREE = lambda x: x // 3
-TIMES_FOUR = lambda x: x * 4
-DIV_FOUR = lambda x: x // 4
-IS_POSITIVE = lambda x: x > 0
-IS_NEGATIVE = lambda x: x < 0
-IS_EVEN = lambda x: x % 2 == 0
-IS_ODD = lambda x: x % 2 == 1
-ADD = lambda x, y: x + y
-SUBTRACT = lambda x, y: x - y
-MULTIPLY = lambda x, y: x * y
-MIN = lambda x, y: min(x, y)
-MAX = lambda x, y: max(x, y)
-
-Below are example programming problems using the `dsl` module, with input-output test cases illustrating their behavior.
-
-Important: All programs begin with ```python and end with ``` alone.
-
-
-[BEGIN PROBLEM]
-Input-output test cases:
-  Case 1. x0 = [4, 2, 7], x1 = 5 --> [7, 4, 2]
-  Case 2. x0 = [-24, 15, 3, -8], x1 = 3 --> [15, 3, -24]
-  Case 3. x0 = [18, 22, 36, 13, 29, 4, 15, 10, 7], x1 = 6 --> [36, 29, 22, 18, 13, 4]
-
-Program:
-```python
-def program(x0, x1):
-  x2 = x0[:x1]
-  x3 = sorted(x2)
-  x4 = list(reversed(x3))
-  return x4
-```
-[END PROBLEM]
-
-
-[BEGIN PROBLEM]
-Input-output test cases:
-  Case 1. x0 = [5, 2, 6, 7, 4] --> [2, 8, 12]
-  Case 2. x0 = [19, 2, 12, 6, 11, 15, 7, 8] --> [2, 14, 20, 28]
-  Case 3. x0 = [5, -4, 6, 7, -1, -2, 4, 1, -6] --> [-4, 2, 0, 4, -2]
-
-Program:
-```python
-def program(x0):
-  x1 = [x for x in x0 if dsl.IS_EVEN(x)]
-  x2 = dsl.Scanl1(dsl.ADD, x1)
-  return x2
-```
-[END PROBLEM]
-
-
-[BEGIN PROBLEM]
-Input-output test cases:
-  Case 1. x0 = [1, 2, 3] --> 6
-  Case 2. x0 = [10, -10] --> 0
-  Case 3. x0 = [45] --> 45
-
-Program:
-```python
-""".lstrip()
-    self.assertEqual(prompt, expected)
-
   def test_few_shot_exe_dec_prompt_deepcoder_version_1(self):
     # Temporarily raise the list length limit to run this test,
     # because the handwritten examples have longer inputs.
     original_value = llm_utils.DEEPCODER_MAX_LIST_LENGTH
     llm_utils.DEEPCODER_MAX_LIST_LENGTH = 10
-    few_shot_dataset = llm_utils.parse_dataset(
-        llm_utils.get_handwritten_few_shot('deepcoder', 'NONE'),
-        dataset_type='deepcoder',
-        version=1,
-    )
+    _, few_shot_examples = self._load_deepcoder_dataset(version=1)[0]
     prompt = llm_utils.few_shot_exe_dec_prompt(
-        few_shot_examples=few_shot_dataset[:2],
+        few_shot_examples=few_shot_examples,
         test_problem=DEEPCODER_TEST_PROBLEM,
         dataset_type='deepcoder',
         version=1,
@@ -769,13 +687,9 @@ Step 1 computes:
     # because the handwritten examples have longer inputs.
     original_value = llm_utils.DEEPCODER_MAX_LIST_LENGTH
     llm_utils.DEEPCODER_MAX_LIST_LENGTH = 10
-    few_shot_dataset = llm_utils.parse_dataset(
-        llm_utils.get_handwritten_few_shot('deepcoder', 'NONE'),
-        dataset_type='deepcoder',
-        version=1,
-    )
+    _, few_shot_examples = self._load_deepcoder_dataset(version=1)[0]
     prompt = llm_utils.few_shot_exe_dec_prompt(
-        few_shot_examples=few_shot_dataset[:2],
+        few_shot_examples=few_shot_examples,
         test_problem=DEEPCODER_TEST_PROBLEM,
         dataset_type='deepcoder',
         version=1,
