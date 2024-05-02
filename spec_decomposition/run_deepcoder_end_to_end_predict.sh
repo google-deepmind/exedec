@@ -78,7 +78,6 @@ for prediction_type in separate joint; do
   xmanager launch end_to_end_predict_xm_run.py -- \
   --exp_title=end_to_end_predict-deepcoder-run-${eval_run}-${prediction_type} \
   --save_dir=${save_dir} \
-  --accelerator="jd=2x2" \
   --dataset_type=deepcoder \
   --experiments=${experiments} \
   --deepcoder_max_list_length=${deepcoder_max_list_length} \

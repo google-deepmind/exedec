@@ -71,7 +71,6 @@ for prediction_type in separate joint; do
   xmanager launch end_to_end_predict_xm_run.py -- \
   --exp_title=end_to_end_predict-robustfill-run-${eval_run}-${prediction_type} \
   --save_dir=${save_dir} \
-  --accelerator="jd=2x2" \
   --dataset_type=robustfill \
   --experiments=${experiments} \
   --test_dataset_format=${test_dataset_format} \

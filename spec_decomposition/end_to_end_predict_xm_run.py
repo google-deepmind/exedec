@@ -32,9 +32,6 @@ _EXP_TITLE = flags.DEFINE_string(
 _SAVE_DIR = flags.DEFINE_string(
     'save_dir', None,
     'CNS directory for writing.')
-_ACCELERATOR = flags.DEFINE_string(
-    'accelerator', 'v100=1',
-    'Accelerator specification. Format: <GPU>=<count> or <TPU>=<topology>.')
 _BUILD_TARGET = flags.DEFINE_string(
     'build_target',
     '//third_party/deepmind/exedec/spec_decomposition:end_to_end_predict',
@@ -155,7 +152,6 @@ def create_job(experiment, save_dir):
   """Creates a job."""
   requirements = xm.JobRequirements(
       service_tier=xm.ServiceTier.PROD,
-      **_ACCELERATOR.value,
   )
 
   # Static arguments that don't change in the hyperparameter sweep.

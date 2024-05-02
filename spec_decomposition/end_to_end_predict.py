@@ -329,7 +329,8 @@ def end_to_end_beam_init(batch_size,
   finished_flags0 = aux['finished']
   finished_aux = aux
   # add beam dimension to attention cache pytree elements
-  beam_cache0 = jax.tree_map(lambda x: decode.add_beam_dim(x, beam_size), cache)
+  beam_cache0 = jax.tree_util.tree_map(
+      lambda x: decode.add_beam_dim(x, beam_size), cache)
   return decode.BeamState(
       cur_index=cur_index0,
       cur_encoded=encoded,
@@ -581,7 +582,7 @@ def main(_):
   tb_hparam_str = 'hparams-' + ','.join([f'{k}={v}'
                                          for k, v in tb_hparam_dict.items()])
 
-  write_summary = jax.host_id() == 0
+  write_summary = jax.process_index() == 0
   tb_dir = (os.path.join(_SAVE_DIR.value, 'tb', tb_hparam_str) if write_summary
             else '')
   summary_writer = tensorboard.SummaryWriter(tb_dir)
