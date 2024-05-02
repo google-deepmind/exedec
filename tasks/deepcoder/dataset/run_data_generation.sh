@@ -78,7 +78,7 @@ splits=$(printf ",%s" "${splits_array[@]}")
 splits=${splits:1}
 
 # Launch the experiment.
-xmanager launch xm_run.py -- \
+xmanager launch tasks/deepcoder/dataset/xm_run.py -- \
   --exp_title=generate_${dataset_name} \
   --seed=${seed} \
   --save_dir=${base_save_dir}/${dataset_name} \

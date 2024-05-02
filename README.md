@@ -26,17 +26,19 @@ pip install xmanager numpy tensorflow absl-py
 
 To run our trained model checkpoints or train new models, you will additionally
 need [JAX](https://jax.readthedocs.io/en/latest/installation.html) and
-[Flax](https://flax.readthedocs.io/en/latest/#installation):
+[Flax](https://flax.readthedocs.io/en/latest/#installation). Note, you may need
+to alter the JAX installation depending on your desired platform.
 
 ```
 pip install "jax[cpu]" flax
 ```
 
-Note, you may need to alter your JAX installation depending on your desired
-platform.
+The LLM experiments require [TensorFlow](https://www.tensorflow.org/install) and
+[tqdm](https://tqdm.github.io/):
 
-
-TODO: check all of the above
+```
+pip install tensorflow tqdm
+```
 
 ## Datasets
 
@@ -97,12 +99,32 @@ In the `spec_decomposition/` directory, `run_deepcoder_end_to_end_predict.sh`
 and `run_robustfill_end_to_end_predict.sh` demonstrate how to evaluate the
 checkpoints on our datasets. However, you will likely need to edit the scripts
 to use ML accelerators with your preferred cloud computing platform. We mainly
-provide the scripts to demonstrate how `end_to_end_predict.py` should be invoked
-with command-line flags.
+provide the scripts to show how `end_to_end_predict.py` should be invoked with
+command-line flags.
 
 ## Training new models
 
-TODO
+To train new models, first generate training data as described above. Then, in
+the `spec_decomposition/` directory, the `run_deepcoder_training.sh` and
+`run_robustfill_training.sh` scripts can launch new training runs. However, you
+will likely need to edit the scripts to use ML accelerators with your preferred
+cloud computing platform. The scripts use
+[XManager](https://github.com/google-deepmind/xmanager) to invoke `train.py`
+with appropriate command-line flags. You could alternatively use a different
+mechanism to run `train.py` in a similar way.
+
+## LLM experiments
+
+To run LLM experiments, please see `spec_decomposition/run_llm_experiment.py`,
+where you will need to implement `query_llm` to call your desired LLM.
+
+Then, run the file from the `exedec` directory, changing the command-line flags
+as desired:
+
+```
+python spec_decomposition/run_llm_experiment.py \
+    --model=favorite_llm --prompt_format=exedec
+```
 
 ## Other notes
 
@@ -112,7 +134,8 @@ It may help to know the following, when navigating and interpreting the code:
   "spec_decomposition" in the code.
 * The paper's "SubgoalModel" is instead called "SpecDecomposerModel" in the
   code.
-* The paper's "CombinedModel" is instead called "JointModel" in the code.
+* The paper's "CombinedModel" (used in the no-subgoal ablation) is instead
+  called "JointModel" in the code.
 
 ## Citing this work
 

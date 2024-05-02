@@ -13,9 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Converts test_data/*/*.jsonl files to tfrecords files.
+"""Converts test_data/*/*.jsonl files to TFRecords files.
 
-Use with plain python3 (no fancy dependencies/builds required).
+Run directly with python3. Needs TensorFlow and absl-py dependencies.
 """
 
 from collections.abc import Sequence
