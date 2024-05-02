@@ -15,7 +15,6 @@
 
 """Train seq-to-seq model on random supervised training tasks."""
 
-import ast
 import collections
 import functools
 import os
@@ -51,11 +50,11 @@ gfile = tf.io.gfile
 FLAGS = flags.FLAGS
 
 flags.DEFINE_integer('seed', 0, 'Fixed random seed for training.')
-flags.DEFINE_float('lr', 1e-3, 'Learning rate.')
+flags.DEFINE_float('lr', 2e-4, 'Learning rate.')
 flags.DEFINE_float('weight_decay', 1e-1,
                    'Decay factor for AdamW-style weight decay.')
-flags.DEFINE_integer('embedding_dim', 256, 'Embedding dimension.')
-flags.DEFINE_integer('hidden_dim', 512, 'Hidden dimension.')
+flags.DEFINE_integer('embedding_dim', 512, 'Embedding dimension.')
+flags.DEFINE_integer('hidden_dim', 1024, 'Hidden dimension.')
 flags.DEFINE_integer('num_heads', 4, 'Number of layers.')
 flags.DEFINE_integer('num_layers', 3, 'Number of Transformer heads.')
 flags.DEFINE_boolean('slow_decode', True, 'Use slow decoding for prediction?')
@@ -79,7 +78,7 @@ flags.DEFINE_integer('max_target_length', 200,
                      'Maximum number of characters in the target.')
 
 flags.DEFINE_string('save_dir', None, 'Directory to save results to.')
-flags.DEFINE_integer('num_train_steps', 1000000, 'Number of training steps.')
+flags.DEFINE_integer('num_train_steps', 500_000, 'Number of training steps.')
 flags.DEFINE_integer('num_eval_steps', 10, 'Number of evaluation steps.')
 flags.DEFINE_integer('num_quick_test_steps', 10,
                      'Number of test steps during training.')
@@ -94,7 +93,7 @@ flags.DEFINE_integer('checkpoint_freq', 50000,
 flags.DEFINE_bool('restore_checkpoints', True,
                   'Whether to restore from existing model checkpoints.')
 
-flags.DEFINE_float('synthesizer_corrupted_next_part_rate', 0.2,
+flags.DEFINE_float('synthesizer_corrupted_next_part_rate', 0.0,
                    'The fraction of examples that use the corrupted next part.')
 
 flags.DEFINE_bool('use_relative_attention', True,
@@ -119,9 +118,6 @@ flags.DEFINE_enum('model_type', 'spec_decomposer_model',
 
 flags.DEFINE_bool('predict_only', False,
                   'Whether to only do beam search prediction, no training.')
-
-flags.DEFINE_string('hparams', '{}',
-                    'String specifying hyperparamter search.')
 
 
 def create_learning_rate_scheduler(
@@ -492,9 +488,10 @@ def per_host_sum_pmap(in_tree):
   devices = [host2devices[k][0] for k in host2devices]
   host_psum = jax.pmap(lambda x: jax.lax.psum(x, 'i'), 'i', devices=devices)
   def pre_pmap(xs):
-    return jax.tree_map(lambda x: jnp.broadcast_to(x, (1,) + x.shape), xs)
+    return jax.tree_util.tree_map(lambda x: jnp.broadcast_to(x, (1,) + x.shape),
+                                  xs)
   def post_pmap(xs):
-    return jax.tree_map(lambda x: x[0], xs)
+    return jax.tree_util.tree_map(lambda x: x[0], xs)
   return post_pmap(host_psum(pre_pmap(in_tree)))
 
 
@@ -525,6 +522,11 @@ def load_data(batches, rng):
           new_rng)
 
 
+def print_and_log(s):
+  logging.info(s)
+  print(s, flush=True)
+
+
 def main(_):
   tf.random.set_seed(FLAGS.seed)
   np.random.seed(FLAGS.seed)
@@ -533,16 +535,30 @@ def main(_):
   if not gfile.isdir(FLAGS.save_dir):
     gfile.makedirs(FLAGS.save_dir)
 
-  hparam_dict = ast.literal_eval(FLAGS.hparams)
-  hparam_str = ','.join(sorted(['%s=%s' % (shorten(k), str(v))
-                                for k, v in hparam_dict.items()]))
-  if hparam_str.startswith('s=') or hparam_str.startswith('r='):
-    hparam_str = 'hparams-' + hparam_str
+  # Distinguishes different runs in TensorBoard and checkpoints.
+  hparam_dict = {
+      'attention_dropout_rate': FLAGS.attention_dropout_rate,
+      'aligned_relative_attention': FLAGS.aligned_relative_attention,
+      'dropout_rate': FLAGS.dropout_rate,
+      'experiment': FLAGS.experiment,
+      'embedding_dim': FLAGS.embedding_dim,
+      'hidden_dim': FLAGS.hidden_dim,
+      'lr': FLAGS.lr,
+      'max_distance': FLAGS.max_distance,
+      'max_program_cross_embed_distance': (
+          FLAGS.max_program_cross_embed_distance),
+      'num_position_buckets': FLAGS.num_position_buckets,
+      'seed': FLAGS.seed,
+      'synthesizer_corrupted_next_part_rate': (
+          FLAGS.synthesizer_corrupted_next_part_rate),
+      'use_relative_attention': FLAGS.use_relative_attention,
+  }
+  hparam_str = ','.join([f'{shorten(k)}={v}' for k, v in hparam_dict.items()])
 
   # Number of local devices for this host.
   n_devices = jax.local_device_count()
 
-  if jax.host_id() == 0:
+  if jax.process_index() == 0:
     summary_writer = tensorboard.SummaryWriter(
         os.path.join(FLAGS.save_dir, 'tb', hparam_str))
   else:
@@ -677,7 +693,7 @@ def main(_):
 
   # Load Dataset
   # ---------------------------------------------------------------------------
-  logging.info('Initializing dataset.')
+  print_and_log('Initializing dataset.')
   if not FLAGS.dataset_dir:
     raise ValueError('Must specify dataset_dir.')
   decomposition_or_entire_programs = (
@@ -691,13 +707,13 @@ def main(_):
       f'{decomposition_or_entire_programs}_test.tf_records-*')
 
   # Training dataset.
-  logging.info('Loading dataset from %s', train_dataset_path)
+  print_and_log('Loading dataset from %s' % train_dataset_path)
   padded_shapes = {
       'inputs': io_shape[1:],
       'outputs': io_shape[1:],
       'target': target_shape[1:],
   }
-  logging.info('padded_shapes: %s', padded_shapes)
+  print_and_log('padded_shapes: %s' % padded_shapes)
 
   if FLAGS.dataset_type in ['robustfill', 'deepcoder']:
     if FLAGS.dataset_type == 'robustfill':
@@ -764,7 +780,7 @@ def main(_):
   if FLAGS.model_type == 'synthesizer':
     predict_padded_shapes['corrupted_outputs'] = predict_io_shape[1:]
 
-  logging.info('predict_padded_shapes: %s', predict_padded_shapes)
+  print_and_log('predict_padded_shapes: %s' % predict_padded_shapes)
   predict_ds = eval_ds.unbatch().padded_batch(
       int(np.ceil(batch_size / 10)),
       padded_shapes=predict_padded_shapes)
@@ -862,7 +878,7 @@ def main(_):
           max_len=max(FLAGS.predict_max_input_length, FLAGS.max_target_length)))
 
   rng = jax.random.PRNGKey(FLAGS.seed)
-  rng = jax.random.fold_in(rng, jax.host_id())
+  rng = jax.random.fold_in(rng, jax.process_index())
   rng, init_rng = jax.random.split(rng)
 
   dropout_rng = jax.random.split(rng, jax.local_device_count())
@@ -875,10 +891,10 @@ def main(_):
       jnp.ones(target_shape, jnp.float32))
 
   num_params = sum(x.size for x in jax.tree_leaves(initial_variables['params']))
-  logging.info('Model has %d parameters (embedding_dim=%d, hidden_dim=%d, '
-               'num_layers=%d, num_heads=%d).',
-               num_params, FLAGS.embedding_dim, FLAGS.hidden_dim,
-               FLAGS.num_layers, FLAGS.num_heads)
+  print_and_log('Model has %d parameters (embedding_dim=%d, hidden_dim=%d, '
+                'num_layers=%d, num_heads=%d).'
+                % (num_params, FLAGS.embedding_dim, FLAGS.hidden_dim,
+                   FLAGS.num_layers, FLAGS.num_heads))
 
   optimizer_def = optim.Adam(
       FLAGS.lr,
@@ -897,17 +913,18 @@ def main(_):
         os.path.join(FLAGS.save_dir, 'checkpoints', hparam_str), optimizer)
     # Grab last step.
     start_step = int(optimizer.state.step)
-    logging.info('Found model checkpointed at step %d.', start_step)
+    print_and_log('Found model checkpointed at step %d.' % start_step)
 
     if not FLAGS.predict_only:
-      logging.info('Skipping %s steps...', start_step)
+      print_and_log('Skipping %s steps...' % start_step)
       train_ds = train_ds.skip(start_step)
       dummy_p_train_step = jax.pmap(
           lambda dropout_rng: jax.random.split(dropout_rng)[1])
       for _ in range(start_step):
         dropout_rng = dummy_p_train_step(dropout_rng)
-      logging.info('Finished skipping steps')
-      logging.info('Host %s has dropout_rng = %s', jax.host_id(), dropout_rng)
+      print_and_log('Finished skipping steps')
+      print_and_log('Host %s has dropout_rng = %s'
+                    % (jax.process_index(), dropout_rng))
 
   # Replicate optimizer.
   optimizer = jax_utils.replicate(optimizer)
@@ -946,7 +963,7 @@ def main(_):
   # Main Train Loop
   # ---------------------------------------------------------------------------
 
-  logging.info('Starting training!')
+  print_and_log('Starting training!')
   metrics_all = []
   tick = time.time()
   train_iter = train_ds.as_numpy_iterator()
@@ -967,20 +984,21 @@ def main(_):
 
       # Training Metrics
       if (step and step % FLAGS.log_freq == 0) or is_last_step:
-        logging.info('Gathering training metrics.')
+        print_and_log('Gathering training metrics.')
         metrics_all = common_utils.get_metrics(metrics_all)
         lr = metrics_all.pop('learning_rate').mean()
-        metrics_sums = jax.tree_map(jnp.sum, metrics_all)
+        metrics_sums = jax.tree_util.tree_map(jnp.sum, metrics_all)
         denominator = metrics_sums.pop('denominator')
-        summary = jax.tree_map(
+        summary = jax.tree_util.tree_map(
             lambda x: x / denominator,  # pylint: disable=cell-var-from-loop
             metrics_sums)
         summary['learning_rate'] = lr
         # Calculate (clipped) perplexity after averaging log-perplexities:
         summary['perplexity'] = jnp.clip(jnp.exp(summary['loss']), a_max=1.0e4)
 
-        if jax.host_id() == 0:
-          logging.info('Train in step: %d, loss: %.4f', step, summary['loss'])
+        if jax.process_index() == 0:
+          print_and_log('Train in step: %d, loss: %.4f'
+                        % (step, summary['loss']))
           tock = time.time()
           steps_per_sec = FLAGS.log_freq / (tock - tick)
           tick = tock
@@ -993,7 +1011,7 @@ def main(_):
 
       # Evaluation Metrics
       if (step and step % FLAGS.eval_freq == 0) or is_last_step:
-        logging.info('Gathering evaluation metrics.')
+        print_and_log('Gathering evaluation metrics.')
         t_evaluation_start = time.time()
         eval_metrics = []
         for batches in eval_ds.as_numpy_iterator():
@@ -1003,23 +1021,23 @@ def main(_):
           eval_metrics.append(metrics)
 
         eval_metrics = common_utils.get_metrics(eval_metrics)
-        eval_metrics_sums = jax.tree_map(jnp.sum, eval_metrics)
+        eval_metrics_sums = jax.tree_util.tree_map(jnp.sum, eval_metrics)
         eval_denominator = eval_metrics_sums.pop('denominator')
-        eval_summary = jax.tree_map(
+        eval_summary = jax.tree_util.tree_map(
             lambda x: x / eval_denominator,  # pylint: disable=cell-var-from-loop
             eval_metrics_sums)
 
-        if jax.host_id() == 0:
-          logging.info('Evaluation time: %.4f s step %d, loss: %.4f.',
-                       time.time()-t_evaluation_start, step,
-                       eval_summary['loss'])
+        if jax.process_index() == 0:
+          print_and_log('Evaluation time: %.4f s step %d, loss: %.4f.'
+                        % (time.time()-t_evaluation_start, step,
+                           eval_summary['loss']))
           for key, val in eval_summary.items():
             summary_writer.scalar('eval/' + key, val, step)
           summary_writer.flush()
 
     # Beam search metrics.
     if (step and step % FLAGS.predict_freq == 0) or is_last_step:
-      logging.info('Gathering beam search metrics.')
+      print_and_log('Gathering beam search metrics.')
       test_ds = final_test_dataset if is_last_step else quick_test_dataset
 
       for dataset, predict_or_test in [(predict_ds, 'predict'),
@@ -1040,7 +1058,7 @@ def main(_):
               padded_size = int(
                   np.ceil(cur_pred_batch_size / n_devices) * n_devices)
               # pylint: disable=cell-var-from-loop
-              pred_batch = jax.tree_map(
+              pred_batch = jax.tree_util.tree_map(
                   lambda x: pad_examples(x, padded_size), pred_batch)
             inputs, outputs, targets, rng = load_data(pred_batch, rng)
 
@@ -1103,13 +1121,14 @@ def main(_):
               top_of_beams.append('\n\n'.join(top_of_beam))
 
           all_total_successes, all_total_denominator = per_host_sum_pmap(
-              jax.tree_map(np.array, (total_successes, total_denominator)))
+              jax.tree_util.tree_map(np.array,
+                                     (total_successes, total_denominator)))
 
-          logging.info('host %d %s: total_success=%d, total_denominator=%d. '
-                       'all_total_successes=%d, all_total_denominator=%d.',
-                       jax.host_id(), predict_or_test,
-                       total_successes, total_denominator,
-                       all_total_successes, all_total_denominator)
+          print_and_log('host %d %s: total_success=%d, total_denominator=%d. '
+                        'all_total_successes=%d, all_total_denominator=%d.'
+                        % (jax.process_index(), predict_or_test,
+                           total_successes, total_denominator,
+                           all_total_successes, all_total_denominator))
 
           # Record beam search results as text summaries.
           message = []
@@ -1121,13 +1140,13 @@ def main(_):
             message.append(text)
 
           # Write to tensorboard.
-          if jax.host_id() == 0:
+          if jax.process_index() == 0:
             accuracy = 100 * all_total_successes / all_total_denominator
-            logging.info(
-                '%s results, step %d, beam size %d: %s / %s = %.2f%% (%.2f s)',
-                predict_or_test, step, beam_size,
-                all_total_successes, all_total_denominator, accuracy,
-                time.time() - t_inference_start)
+            print_and_log(
+                '%s results, step %d, beam size %d: %s / %s = %.2f%% (%.2f s)'
+                % (predict_or_test, step, beam_size,
+                   all_total_successes, all_total_denominator, accuracy,
+                   time.time() - t_inference_start))
             predict_only_label = '_predict-only' if FLAGS.predict_only else ''
             summary_writer.scalar(
                 '{}/beam-size-{}{}'.format(predict_or_test,
