@@ -38,6 +38,9 @@ import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
 
+sys.path.append('../')
+# pylint: disable=g-import-not-at-top
+
 from exedec.models import base_models
 from exedec.spec_decomposition import decode
 from exedec.spec_decomposition import decomposition_models as models
@@ -46,7 +49,6 @@ from exedec.tasks.deepcoder import deepcoder_dsl
 from exedec.tasks.robust_fill import dsl as robust_fill_dsl
 from exedec.tasks.robust_fill import tokens as dsl_tokens
 
-sys.path.append('../../')
 gfile = tf.io.gfile
 
 # Experiment setup.
@@ -1477,6 +1479,7 @@ def main(_):
 
     summary_writer.scalar(f'main/total success rate, {bs}',
                           100 * num_success / total, 0)
+    print(f'total success rate for beam size {bs}: {100 * num_success / total}')
     summary_writer.scalar(
         f'main/failures from SpecDecomposerModel, among all failures, {bs}',
         divide_no_nan(100 * metric_e, num_failure), 0)

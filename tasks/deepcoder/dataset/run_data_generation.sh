@@ -32,13 +32,14 @@ declare -a splits_array=(
 
 # Change these options as desired.
 seed=0  # Base seed that affects each worker differently.
+num_processes=16
 max_program_arity=2
 num_examples=3
 deepcoder_max_list_length=5
 deepcoder_max_int=50
 
 dataset_name=deepcoder_data
-base_save_dir=~/exedec_data/
+base_save_dir=~/exedec_data
 
 # Whether to generate a full dataset or just a small one for testing purposes.
 GENERATE_FULL_DATA=false
@@ -63,11 +64,11 @@ if ${GENERATE_FULL_DATA}; then
 else
   echo 'Generating small dataset'
   num_shards_train=2
-  num_programs_per_search_train=100
+  num_programs_per_search_train=1000
   num_searches_train=1
 
   num_shards_test=2
-  num_programs_per_search_test=10
+  num_programs_per_search_test=100
   num_searches_test=1
 fi
 
@@ -78,10 +79,10 @@ splits=$(printf ",%s" "${splits_array[@]}")
 splits=${splits:1}
 
 # Launch the experiment.
-xmanager launch tasks/deepcoder/dataset/xm_run.py -- \
-  --exp_title=generate_${dataset_name} \
+python -m tasks.deepcoder.dataset.run_data_generation \
   --seed=${seed} \
   --save_dir=${base_save_dir}/${dataset_name} \
+  --num_processes=${num_processes} \
   --experiments=${experiments} \
   --splits=${splits} \
   --num_shards_train=${num_shards_train} \

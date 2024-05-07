@@ -13,24 +13,27 @@
 # limitations under the License.
 # ==============================================================================
 
-"""XM Launcher for exedec/tasks/robust_fill/dataset:write_data."""
+"""Runs write_data.py multiple times with appropriate arguments.
+
+Use with the run_data_generation.sh script.
+"""
 
 import collections
 import itertools
+import multiprocessing
+import subprocess
 
 from absl import app
 from absl import flags
 
-from xmanager import xm
-from xmanager import xm_local
 
-# Flags for experiment setup.
-_EXP_TITLE = flags.DEFINE_string(
-    'exp_title', 'robustfill_dataset', 'Title of the experiment.')
+# Flags for setup.
 _SEED = flags.DEFINE_integer(
     'seed', 0, 'Starting seed.')
 _SAVE_DIR = flags.DEFINE_string(
     'save_dir', None, 'Directory to save dataset in.')
+_NUM_PROCESSES = flags.DEFINE_integer(
+    'num_processes', 16, 'Number of processes to launch.')
 
 # Flags for dataset info.
 _EXPERIMENTS = flags.DEFINE_string(
@@ -55,15 +58,22 @@ _MAX_INPUT_LENGTH = flags.DEFINE_integer(
     'max_input_length', 20,
     'Maximum number of characters in input strings.')
 
-BUILD_TARGET = '//third_party/deepmind/exedec/tasks/robust_fill/dataset:write_data'
+
+def run_job(job_args):
+  subprocess.run(
+      args=(['python', '-m', 'tasks.robust_fill.dataset.write_data']
+            + [f'--{k}={v}' for k, v in job_args.items()]),
+      check=True,
+  )
 
 
-def create_job(xm_experiment):
-  """Creates a job."""
-  requirements = xm.JobRequirements()
+def main(_):
+  experiments = _EXPERIMENTS.value.upper().split(',')
+  splits = _SPLITS.value.lower().split(',')
+  assert all(split in {'train', 'valid', 'test'} for split in splits)
 
-  # Static arguments that don't change per worker.
-  args = collections.OrderedDict([
+  # Static arguments that don't change per job.
+  static_args = collections.OrderedDict([
       # Experiment setup.
       ('seed', _SEED.value),
       ('save_dir', _SAVE_DIR.value),
@@ -72,45 +82,28 @@ def create_job(xm_experiment):
       ('max_input_length', _MAX_INPUT_LENGTH.value),
   ])
 
-  [executable] = xm_experiment.package([
-      xm.bazel_binary(
-          label=BUILD_TARGET,
-          executor_spec=xm_local.LocalSpec(),
-          args=args,
-      )])
+  jobs = []
+  for experiment, split in itertools.product(experiments, splits):
+    if split == 'train':
+      num_shards = _NUM_TRAIN_SHARDS.value
+      num_programs = _NUM_TRAIN_PROGRAMS_PER_SHARD.value
+    else:
+      num_shards = 1
+      num_programs = _NUM_TEST_PROGRAMS.value
 
-  executor = xm_local.Local(requirements=requirements)
-  return xm.Job(executable, executor)
+    for shard_id in range(num_shards):
+      jobs.append(static_args | {
+          'num_shards': num_shards,
+          'shard_id': shard_id,
+          'experiment': experiment,
+          'split': split,
+          'num_programs': num_programs,
+      })
 
+  with multiprocessing.Pool(processes=_NUM_PROCESSES.value) as pool:
+    pool.map(run_job, jobs)
 
-def main(_):
-  """Launch the experiment."""
-
-  experiments = _EXPERIMENTS.value.upper().split(',')
-  splits = _SPLITS.value.lower().split(',')
-  assert all(split in {'train', 'valid', 'test'} for split in splits)
-
-  with xm_local.create_experiment(
-      experiment_title=_EXP_TITLE.value) as xm_experiment:
-
-    job = create_job(xm_experiment)
-
-    for experiment, split in itertools.product(experiments, splits):
-      if split == 'train':
-        num_shards = _NUM_TRAIN_SHARDS.value
-        num_programs = _NUM_TRAIN_PROGRAMS_PER_SHARD.value
-      else:
-        num_shards = 1
-        num_programs = _NUM_TEST_PROGRAMS.value
-
-      for shard_id in range(num_shards):
-        xm_experiment.add(job, args={'args': {
-            'num_shards': num_shards,
-            'shard_id': shard_id,
-            'experiment': experiment,
-            'split': split,
-            'num_programs': num_programs,
-        }})
+  print('Finished writing data!')
 
 
 if __name__ == '__main__':

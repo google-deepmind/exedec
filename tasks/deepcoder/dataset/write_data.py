@@ -19,15 +19,18 @@ import copy
 import hashlib
 import os
 import random
+import sys
 import timeit
 import typing
-from typing import List, Union
 
 from absl import app
 from absl import flags
 from absl import logging
 
 import tensorflow as tf
+
+sys.path.append('../')
+# pylint: disable=g-import-not-at-top
 
 from exedec.tasks import experiment as exp_module
 from exedec.tasks.deepcoder import deepcoder_dsl as dsl
@@ -62,7 +65,7 @@ _MAX_PROGRAM_ARITY = flags.DEFINE_integer(
     'max_program_arity', 2, 'Maximum number of inputs.')
 
 
-def _bytes_feature(strs: List[Union[str, bytes]]):
+def _bytes_feature(strs: list[str | bytes]):
   """Returns a bytes_list Feature from a list of strings."""
   return tf.train.Feature(bytes_list=tf.train.BytesList(
       value=[s if isinstance(s, bytes) else str.encode(s) for s in strs]))
@@ -116,7 +119,7 @@ def _corrupt(next_parts, outputs):
         assert type(results[0]) == list  # pylint: disable=unidiomatic-typecheck
         changed = copy.deepcopy(results)  # Will perform changes in place.
         for result in changed:
-          result = typing.cast(List[int], result)  # Not an int or None.
+          result = typing.cast(list[int], result)  # Not an int or None.
           # Perturbed numbers should be chosen reasonably considering the
           # existing numbers.
           min_result = min(result) if result else dsl.deepcoder_min_int()
@@ -283,6 +286,9 @@ def generate_tasks_for_experiment(
 
 
 def main(_):
+  print(f'In write_data.py with {_SEED.value=} {_EXPERIMENT.value=} '
+        f'{_SPLIT.value=} {_SHARD_ID.value=}')
+
   if _SEED.value is not None:
     # By setting seeds this way, they are not dependent on the order jobs are
     # run in. This allows the flexibility to generate a part of the data without
@@ -334,6 +340,9 @@ def main(_):
         entire_programs_writer.write(serialize_entire_program_example(task))
         for example in serialize_decomposition_examples(task):
           decomposition_writer.write(example)
+
+  print(f'Wrote entire programs data to {entire_programs_fname}')
+  print(f'Wrote decomposition data to {decomposition_data_fname}')
 
 
 if __name__ == '__main__':

@@ -13,32 +13,24 @@
 # limitations under the License.
 # ==============================================================================
 
-"""XM Launcher for exedec/spec_decomposition:train."""
+"""Launches potentially multiple runs of exedec/spec_decomposition/train.py."""
 
 import collections
 import itertools
 import os
+import subprocess
 from typing import Any
 
 from absl import app
 from absl import flags
-from xmanager import xm
-from xmanager import xm_local
 
 # Flags for experiment setup.
-_EXP_TITLE = flags.DEFINE_string(
-    'exp_title', 'train_exedec',
-    'Title of the experiment.')
 _SEED = flags.DEFINE_multi_integer(
     'seed', [10, 20, 30, 40, 50],
     'Seeds used for training.')
 _SAVE_DIR = flags.DEFINE_string(
     'save_dir', None,
-    'CNS directory for writing.')
-_BUILD_TARGET = flags.DEFINE_string(
-    'build_target',
-    '//third_party/deepmind/exedec/spec_decomposition:train',
-    'The build target to run.')
+    'Directory for checkpoints and TensorBoard files.')
 _PREDICT_ONLY = flags.DEFINE_bool(
     'predict_only', False,
     'Whether to only do beam search prediction without training.')
@@ -144,59 +136,6 @@ _SYNTHESIZER_CORRUPTED_NEXT_PART_RATE = flags.DEFINE_multi_float(
     'training the SynthesizerModel.')
 
 
-def create_job(xm_experiment, save_dir, max_input_length,
-               predict_max_input_length, max_target_length):
-  """Creates a job."""
-  requirements = xm.JobRequirements(
-      service_tier=xm.ServiceTier.PROD,
-  )
-
-  # Static arguments that don't change in the hyperparameter sweep.
-  args = collections.OrderedDict([
-      # Experiment setup.
-      ('save_dir', save_dir),
-      ('predict_only', _PREDICT_ONLY.value),
-      # Dataset info.
-      ('dataset_type', _DATASET_TYPE.value),
-      ('dataset_dir', _DATASET_DIR.value),
-      ('num_examples', _NUM_EXAMPLES.value),
-      ('max_input_length', max_input_length),
-      ('predict_max_input_length', predict_max_input_length),
-      ('max_target_length', max_target_length),
-      # Training settings.
-      ('num_train_steps', _NUM_TRAIN_STEPS.value),
-      ('num_eval_steps', _NUM_EVAL_STEPS.value),
-      ('log_freq', _LOG_FREQ.value),
-      ('eval_freq', _EVAL_FREQ.value),
-      ('predict_freq', _PREDICT_FREQ.value),
-      ('checkpoint_freq', _CHECKPOINT_FREQ.value),
-      # Model hyperparameters.
-      ('model_type', _MODEL_TYPE.value),
-      ('per_device_batch_size', _PER_DEVICE_BATCH_SIZE.value),
-      ('num_heads', 4),
-      ('num_layers', 3),
-      # DeepCoder-specific settings.
-      ('deepcoder_max_list_length', _DEEPCODER_MAX_LIST_LENGTH.value),
-      ('deepcoder_max_int', _DEEPCODER_MAX_INT.value),
-  ])
-
-  env_vars = collections.OrderedDict([
-      ('XLA_PYTHON_CLIENT_MEM_FRACTION', '.75'),
-  ])
-
-  [executable] = xm_experiment.package([
-      xm.bazel_binary(
-          label=_BUILD_TARGET.value,
-          executor_spec=xm_local.Local.Spec(),
-          args=args,
-          env_vars=env_vars,
-      )])
-
-  executor = xm_local.Local(requirements=requirements)
-
-  return xm.Job(executable, executor)
-
-
 def compute_lengths():
   """Computes lengths and distances based on dataset, model, and other flags."""
   if _DATASET_TYPE.value == 'deepcoder':
@@ -285,7 +224,7 @@ def product_sweep(
   for name, value_list in all_name_and_values:
     names.append(name)
     value_lists.append(value_list)
-  return [{'args': dict(zip(names, choices))}
+  return [dict(zip(names, choices))
           for choices in itertools.product(*value_lists)]
 
 
@@ -315,8 +254,18 @@ def get_sweep(max_distance_options, max_program_cross_embed_distance_options):
   ])
 
 
+def run_job(job_args):
+  subprocess.run(
+      args=(['python', '-m', 'spec_decomposition.train']
+            + [f'--{k}={v}' for k, v in job_args.items()]),
+      check=True,
+  )
+
+
 def main(_):
   """Launch the experiment."""
+
+  save_dir = os.path.join(_SAVE_DIR.value, _MODEL_TYPE.value)
 
   (max_input_length,
    predict_max_input_length,
@@ -324,16 +273,40 @@ def main(_):
    max_distance_options,
    max_program_cross_embed_distance_options) = compute_lengths()
 
-  with xm_local.create_experiment(
-      experiment_title=_EXP_TITLE.value) as xm_experiment:
+  # Static arguments that don't change in the hyperparameter sweep.
+  static_args = collections.OrderedDict([
+      # Experiment setup.
+      ('save_dir', save_dir),
+      ('predict_only', _PREDICT_ONLY.value),
+      # Dataset info.
+      ('dataset_type', _DATASET_TYPE.value),
+      ('dataset_dir', _DATASET_DIR.value),
+      ('num_examples', _NUM_EXAMPLES.value),
+      ('max_input_length', max_input_length),
+      ('predict_max_input_length', predict_max_input_length),
+      ('max_target_length', max_target_length),
+      # Training settings.
+      ('num_train_steps', _NUM_TRAIN_STEPS.value),
+      ('num_eval_steps', _NUM_EVAL_STEPS.value),
+      ('log_freq', _LOG_FREQ.value),
+      ('eval_freq', _EVAL_FREQ.value),
+      ('predict_freq', _PREDICT_FREQ.value),
+      ('checkpoint_freq', _CHECKPOINT_FREQ.value),
+      # Model hyperparameters.
+      ('model_type', _MODEL_TYPE.value),
+      ('per_device_batch_size', _PER_DEVICE_BATCH_SIZE.value),
+      ('num_heads', 4),
+      ('num_layers', 3),
+      # DeepCoder-specific settings.
+      ('deepcoder_max_list_length', _DEEPCODER_MAX_LIST_LENGTH.value),
+      ('deepcoder_max_int', _DEEPCODER_MAX_INT.value),
+  ])
 
-    save_dir = os.path.join(_SAVE_DIR.value, _MODEL_TYPE.value)
-
-    for sweep_args in get_sweep(max_distance_options,
-                                max_program_cross_embed_distance_options):
-      job = create_job(xm_experiment, save_dir, max_input_length,
-                       predict_max_input_length, max_target_length)
-      xm_experiment.add(job, args=sweep_args)
+  # Run training jobs in sequence.
+  for sweep_args in get_sweep(max_distance_options,
+                              max_program_cross_embed_distance_options):
+    job_args = static_args | sweep_args
+    run_job(job_args)
 
 
 if __name__ == '__main__':

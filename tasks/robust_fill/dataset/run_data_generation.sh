@@ -31,11 +31,12 @@ declare -a splits_array=(
 
 # Change these options as desired.
 seed=0  # Base seed that affects each worker differently.
+num_processes=16
 num_examples=4
 max_input_length=20
 
 dataset_name=robustfill_data
-base_save_dir=~/exedec_data/
+base_save_dir=~/exedec_data
 
 # Whether to generate a full dataset or just a small one for testing purposes.
 GENERATE_FULL_DATA=false
@@ -53,8 +54,8 @@ if ${GENERATE_FULL_DATA}; then
 else
   echo 'Generating small dataset'
   num_train_shards=2
-  num_train_programs_per_shard=100
-  num_test_programs=20
+  num_train_programs_per_shard=1000
+  num_test_programs=200
 fi
 
 # Generate comma-separated strings to pass as an argument.
@@ -63,11 +64,10 @@ experiments=${experiments:1}
 splits=$(printf ",%s" "${splits_array[@]}")
 splits=${splits:1}
 
-# Launch the experiment.
-xmanager launch tasks/robust_fill/dataset/xm_run.py -- \
-  --exp_title=generate_${dataset_name} \
+python -m tasks.robust_fill.dataset.run_data_generation \
   --seed=${seed} \
   --save_dir=${base_save_dir}/${dataset_name} \
+  --num_processes=${num_processes} \
   --experiments=${experiments} \
   --splits=${splits} \
   --num_train_shards=${num_train_shards} \

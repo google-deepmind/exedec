@@ -33,7 +33,7 @@ max_num_statements=5
 embedding_dim=512
 hidden_dim=1024
 
-# Reimplement the length and distance computation from the training xm_run.py.
+# Reimplement the length and distance computation from launch_train.py.
 # It is important that these distances are exactly as used in training.
 object_token_length=$((deepcoder_max_list_length + 5))
 max_input_objects=$((max_program_arity + max_num_statements - 1))
@@ -57,11 +57,19 @@ max_num_program_parts=7
 max_program_length=$((max_program_part_length * max_num_program_parts))
 max_spec_part_length=30
 
+# To use test data in the GCS bucket:
 base_data_dir=gs://exedec/test_data_tf_records/deepcoder
-train_run=neurips23final
+# To use test data generated locally:
+# base_data_dir=~/exedec_data/deepcoder_data
+
+# To use trained models in the GCS bucket:
 base_model_dir=gs://exedec/trained_models/deepcoder
+# To use models trained locally:
+# train_run=1
+# base_model_dir=~/exedec_results/exedec_train_deepcoder_run-${train_run}
+
 num_test=1000
-eval_run=e2e_predict
+eval_run=e2e_predict_1
 save_dir=~/exedec_results/evaluation/deepcoder_${eval_run}
 
 test_dataset_format=${base_data_dir}/{experiment}_data/entire_programs_test.tf_records*
@@ -75,7 +83,7 @@ experiments=${experiments:1}
 
 for prediction_type in separate joint; do
 
-  xmanager launch end_to_end_predict_xm_run.py -- \
+  python -m spec_decomposition.launch_end_to_end_predict \
   --exp_title=end_to_end_predict-deepcoder-run-${eval_run}-${prediction_type} \
   --save_dir=${save_dir} \
   --dataset_type=deepcoder \

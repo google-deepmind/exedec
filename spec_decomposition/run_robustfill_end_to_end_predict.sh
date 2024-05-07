@@ -29,11 +29,19 @@ num_examples=4
 embedding_dim=512
 hidden_dim=1024
 
+# To use test data in the GCS bucket:
 base_data_dir=gs://exedec/test_data_tf_records/robustfill
-train_run=neurips23final
+# To use test data generated locally:
+# base_data_dir=~/exedec_data/robustfill_data
+
+# To use trained models in the GCS bucket:
 base_model_dir=gs://exedec/trained_models/robustfill
+# To use models trained locally:
+# train_run=1
+# base_model_dir=~/exedec_results/exedec_train_robustfill_run-${train_run}
+
 num_test=1000
-eval_run=e2e_predict
+eval_run=e2e_predict_1
 save_dir=~/exedec_results/evaluation/robustfill_${eval_run}
 
 test_dataset_format=${base_data_dir}/{experiment}_data/entire_programs_test.tf_records*
@@ -68,7 +76,7 @@ for prediction_type in separate joint; do
     exit 1
   fi
 
-  xmanager launch end_to_end_predict_xm_run.py -- \
+  python -m spec_decomposition.launch_end_to_end_predict \
   --exp_title=end_to_end_predict-robustfill-run-${eval_run}-${prediction_type} \
   --save_dir=${save_dir} \
   --dataset_type=robustfill \

@@ -55,8 +55,7 @@ experiments=${experiments:1}
 # tasks.
 for model_type in "${models_array[@]}"; do
 
-  xmanager launch train_xm_run.py -- \
-    --exp_title=${title_without_model_type}_${model_type} \
+  python -m spec_decomposition.launch_train \
     --save_dir=${save_dir} \
     --dataset_type=deepcoder \
     --experiments=${experiments} \

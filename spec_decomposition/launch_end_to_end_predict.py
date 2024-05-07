@@ -13,17 +13,16 @@
 # limitations under the License.
 # ==============================================================================
 
-"""XM Launcher for exedec/spec_decomposition:end_to_end_predict."""
+"""Launches exedec/spec_decomposition/end_to_end_predict.py."""
 
 import collections
 import itertools
 import os
+import subprocess
 from typing import Any
 
 from absl import app
 from absl import flags
-from xmanager import xm
-from xmanager import xm_local
 
 # Flags for experiment setup.
 _EXP_TITLE = flags.DEFINE_string(
@@ -31,11 +30,7 @@ _EXP_TITLE = flags.DEFINE_string(
     'Title of the experiment.')
 _SAVE_DIR = flags.DEFINE_string(
     'save_dir', None,
-    'CNS directory for writing.')
-_BUILD_TARGET = flags.DEFINE_string(
-    'build_target',
-    '//third_party/deepmind/exedec/spec_decomposition:end_to_end_predict',
-    'The build target to run.')
+    'Directory for writing TensorBoard results files.')
 
 # Flags for dataset info.
 _DATASET_TYPE = flags.DEFINE_enum(
@@ -148,14 +143,80 @@ _DEEPCODER_MAX_INT = flags.DEFINE_integer(
     'The maximum value of a DeepCoder int.')
 
 
-def create_job(experiment, save_dir):
-  """Creates a job."""
-  requirements = xm.JobRequirements(
-      service_tier=xm.ServiceTier.PROD,
+def get_boolean_options(flag):
+  flag_value = flag.value.lower()
+  if flag_value == 'true':
+    return [True]
+  elif flag_value == 'false':
+    return [False]
+  elif flag_value == 'both':
+    return [True, False]
+  else:
+    raise ValueError(f'Unhandled boolean option: {flag_value}')
+
+
+def product_sweep(
+    all_name_and_values: list[tuple[str, list[Any]]],
+) -> dict[str, dict[str, Any]]:
+  names = []
+  value_lists = []
+  for name, value_list in all_name_and_values:
+    names.append(name)
+    value_lists.append(value_list)
+  return [dict(zip(names, choices))
+          for choices in itertools.product(*value_lists)]
+
+
+def get_sweep():
+  """Returns a hyperparameter sweep."""
+  sweep = product_sweep([
+      ('seed', _SEED.value),
+      ('experiment', _EXPERIMENTS.value.upper().split(',')),
+      ('beam_size', _BEAM_SIZE.value),
+      ('prediction_type', [_PREDICTION_TYPE.value]),
+      ('detect_invalid', get_boolean_options(_DETECT_INVALID)),
+      ('use_execution', get_boolean_options(_USE_EXECUTION)),
+      ('discard_repeat_functionality',
+       get_boolean_options(_DISCARD_REPEAT_FUNCTIONALITY)),
+      ('aligned_relative_attention',
+       get_boolean_options(_ALIGNED_RELATIVE_ATTENTION)
+       if _PREDICTION_TYPE.value == 'separate'
+       else [False]),
+      ('corruption_rate',
+       _CORRUPTION_RATE.value
+       if _PREDICTION_TYPE.value == 'separate'
+       else [0.0]),
+  ])
+
+  # Some arg settings are incompatible with each other. See
+  # end_to_end_predict.py for reasonings.
+  filtered_sweep = []
+  for args in sweep:
+    if args['prediction_type'] == 'joint' and not args['use_execution']:
+      continue
+    if not args['use_execution'] and args['discard_repeat_functionality']:
+      continue
+    if not args['detect_invalid'] and args['discard_repeat_functionality']:
+      continue
+    filtered_sweep.append(args)
+  return filtered_sweep
+
+
+def run_job(job_args):
+  subprocess.run(
+      args=(['python', '-m', 'spec_decomposition.end_to_end_predict']
+            + [f'--{k}={v}' for k, v in job_args.items()]),
+      check=True,
   )
 
+
+def main(_):
+  """Launch the experiment."""
+
+  save_dir = os.path.join(_SAVE_DIR.value, _EXP_TITLE.value)
+
   # Static arguments that don't change in the hyperparameter sweep.
-  args = collections.OrderedDict([
+  static_args = collections.OrderedDict([
       # Experiment setup.
       ('save_dir', save_dir),
       # Dataset info.
@@ -192,93 +253,10 @@ def create_job(experiment, save_dir):
       ('deepcoder_max_int', _DEEPCODER_MAX_INT.value),
   ])
 
-  env_vars = collections.OrderedDict([
-      ('XLA_PYTHON_CLIENT_MEM_FRACTION', '.5'),
-  ])
-
-  [executable] = experiment.package([
-      xm.bazel_binary(
-          label=_BUILD_TARGET.value,
-          executor_spec=xm_local.Local.Spec(),
-          args=args,
-          env_vars=env_vars,
-      )])
-
-  executor = xm_local.Local(requirements=requirements)
-
-  return xm.Job(executable, executor)
-
-
-def get_boolean_options(flag):
-  flag_value = flag.value.lower()
-  if flag_value == 'true':
-    return [True]
-  elif flag_value == 'false':
-    return [False]
-  elif flag_value == 'both':
-    return [True, False]
-  else:
-    raise ValueError(f'Unhandled boolean option: {flag_value}')
-
-
-def product_sweep(
-    all_name_and_values: list[tuple[str, list[Any]]],
-) -> dict[str, dict[str, Any]]:
-  names = []
-  value_lists = []
-  for name, value_list in all_name_and_values:
-    names.append(name)
-    value_lists.append(value_list)
-  return [{'args': dict(zip(names, choices))}
-          for choices in itertools.product(*value_lists)]
-
-
-def get_sweep():
-  """Returns a hyperparameter sweep."""
-  sweep = product_sweep([
-      ('seed', _SEED.value),
-      ('experiment', _EXPERIMENTS.value.upper().split(',')),
-      ('beam_size', _BEAM_SIZE.value),
-      ('prediction_type', [_PREDICTION_TYPE.value]),
-      ('detect_invalid', get_boolean_options(_DETECT_INVALID)),
-      ('use_execution', get_boolean_options(_USE_EXECUTION)),
-      ('discard_repeat_functionality',
-       get_boolean_options(_DISCARD_REPEAT_FUNCTIONALITY)),
-      ('aligned_relative_attention',
-       get_boolean_options(_ALIGNED_RELATIVE_ATTENTION)
-       if _PREDICTION_TYPE.value == 'separate'
-       else [False]),
-      ('corruption_rate',
-       _CORRUPTION_RATE.value
-       if _PREDICTION_TYPE.value == 'separate'
-       else [0.0]),
-  ])
-
-  # Some arg settings are incompatible with each other. See
-  # end_to_end_predict.py for reasonings.
-  filtered_sweep = []
-  for sweep_element in sweep:
-    args = sweep_element['args']
-    if args['prediction_type'] == 'joint' and not args['use_execution']:
-      continue
-    if not args['use_execution'] and args['discard_repeat_functionality']:
-      continue
-    if not args['detect_invalid'] and args['discard_repeat_functionality']:
-      continue
-    filtered_sweep.append(sweep_element)
-  return filtered_sweep
-
-
-def main(_):
-  """Launch the experiment."""
-
-  with xm_local.create_experiment(
-      experiment_title=_EXP_TITLE.value) as experiment:
-
-    save_dir = os.path.join(_SAVE_DIR.value, _EXP_TITLE.value)
-    job = create_job(experiment, save_dir)
-    for sweep_args in get_sweep():
-      experiment.add(job, args=sweep_args)
+  # Run prediction jobs in sequence.
+  for sweep_args in get_sweep():
+    job_args = static_args | sweep_args
+    run_job(job_args)
 
 
 if __name__ == '__main__':

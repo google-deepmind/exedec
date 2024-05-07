@@ -19,10 +19,14 @@ import functools
 import hashlib
 import os
 import random
+import sys
 
 from absl import app
 from absl import flags
 import tensorflow as tf
+
+sys.path.append('../')
+# pylint: disable=g-import-not-at-top
 
 from exedec.tasks import experiment as exp_module
 from exedec.tasks.robust_fill import dsl
@@ -236,6 +240,9 @@ def generate_task_for_experiment(experiment: str, is_train: bool):
 
 
 def main(_):
+  print(f'In write_data.py with {_SEED.value=} {_EXPERIMENT.value=} '
+        f'{_SPLIT.value=} {_SHARD_ID.value=}')
+
   if _SEED.value is not None:
     # By setting seeds this way, they are not dependent on the order jobs are
     # run in. This allows the flexibility to generate a part of the data without
@@ -273,6 +280,10 @@ def main(_):
           serialize_entire_program_example(task, token_id_table))
       for example in serialize_decomposition_examples(task, token_id_table):
         decomposition_writer.write(example)
+
+  print(f'Wrote entire programs data to {entire_programs_fname}')
+  print(f'Wrote decomposition data to {decomposition_data_fname}')
+
 
 if __name__ == '__main__':
   app.run(main)

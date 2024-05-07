@@ -36,6 +36,9 @@ import jax.numpy as jnp
 import numpy as np
 import tensorflow as tf
 
+sys.path.append('../')
+# pylint: disable=g-import-not-at-top
+
 from exedec.models import base_models
 from exedec.spec_decomposition import decomposition_models as models
 from exedec.spec_decomposition import input_pipeline
@@ -44,7 +47,6 @@ from exedec.tasks.deepcoder import deepcoder_dsl
 from exedec.tasks.robust_fill import dsl as robust_fill_dsl
 from exedec.tasks.robust_fill import tokens as dsl_tokens
 
-sys.path.append('../../')
 gfile = tf.io.gfile
 
 FLAGS = flags.FLAGS
@@ -1170,7 +1172,7 @@ def main(_):
     if not FLAGS.predict_only and (
         (step % FLAGS.checkpoint_freq == 0 and step > 0) or is_last_step):
       # Save unreplicated optimizer + model state.
-      checkpoints.save_checkpoint_multiprocess(
+      checkpoints.save_checkpoint(
           os.path.join(FLAGS.save_dir, 'checkpoints', hparam_str),
           jax_utils.unreplicate(optimizer),
           step,
