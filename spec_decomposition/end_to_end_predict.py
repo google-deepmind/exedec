@@ -1479,7 +1479,8 @@ def main(_):
 
     summary_writer.scalar(f'main/total success rate, {bs}',
                           100 * num_success / total, 0)
-    print(f'total success rate for beam size {bs}: {100 * num_success / total}')
+    print(
+        f'total success rate for beam size {bs}: {100 * num_success / total}%')
     summary_writer.scalar(
         f'main/failures from SpecDecomposerModel, among all failures, {bs}',
         divide_no_nan(100 * metric_e, num_failure), 0)
